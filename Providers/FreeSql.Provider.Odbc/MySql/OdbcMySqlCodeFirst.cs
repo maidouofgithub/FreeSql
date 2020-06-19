@@ -57,8 +57,8 @@ namespace FreeSql.Odbc.MySql
             {
                 var names = string.Join(",", Enum.GetNames(enumType).Select(a => _commonUtils.FormatSql("{0}", a)));
                 var newItem = enumType.GetCustomAttributes(typeof(FlagsAttribute), false).Any() ?
-                    CsToDb.New(OdbcType.VarChar, "set", $"set({names}){(type.IsEnum ? " NOT NULL" : "")}", false, type.IsEnum ? false : true, Enum.GetValues(enumType).GetValue(0)) :
-                    CsToDb.New(OdbcType.VarChar, "enum", $"enum({names}){(type.IsEnum ? " NOT NULL" : "")}", false, type.IsEnum ? false : true, Enum.GetValues(enumType).GetValue(0));
+                    CsToDb.New(OdbcType.VarChar, "set", $"set({names}){(type.IsEnum ? " NOT NULL" : "")}", false, type.IsEnum ? false : true, enumType.CreateInstanceGetDefaultValue()) :
+                    CsToDb.New(OdbcType.VarChar, "enum", $"enum({names}){(type.IsEnum ? " NOT NULL" : "")}", false, type.IsEnum ? false : true, enumType.CreateInstanceGetDefaultValue());
                 if (_dicCsToDb.ContainsKey(type.FullName) == false)
                 {
                     lock (_dicCsToDbLock)
@@ -220,8 +220,15 @@ where a.table_schema in ({0}) and a.table_name in ({1})", tboldname ?? tbname);
                             {
                                 var isCommentChanged = tbstructcol.comment != (tbcol.Comment ?? "");
                                 var isDbTypeChanged = tbcol.Attribute.DbType.StartsWith(tbstructcol.sqlType, StringComparison.CurrentCultureIgnoreCase) == false;
-                                if (tbstructcol.sqlType == "datetime(0)" && Regex.IsMatch(tbcol.Attribute.DbType, @"datetime\s+\(", RegexOptions.IgnoreCase) == false)
+                                if (tbstructcol.sqlType == "datetime(0)" && Regex.IsMatch(tbcol.Attribute.DbType, @"datetime\s*\(", RegexOptions.IgnoreCase) == false)
                                     isDbTypeChanged = tbcol.Attribute.DbType.StartsWith("datetime", StringComparison.CurrentCultureIgnoreCase) == false;
+                                else if (tbstructcol.sqlType.StartsWith("datetime", StringComparison.CurrentCultureIgnoreCase)) isDbTypeChanged = tbcol.Attribute.DbType.StartsWith("datetime", StringComparison.CurrentCultureIgnoreCase) == false ||
+                                        (int.TryParse(Regex.Match(tbcol.Attribute.DbType, @"datetime\s*\((\d*)", RegexOptions.IgnoreCase).Groups[1].Value, out var trydtrd) ? trydtrd : 3) !=
+                                        (int.TryParse(Regex.Match(tbstructcol.sqlType, @"datetime\s*\((\d*)", RegexOptions.IgnoreCase).Groups[1].Value, out var trydtrd2) ? trydtrd2 : 3);
+                                else if (tbstructcol.sqlType.StartsWith("int", StringComparison.CurrentCultureIgnoreCase)) isDbTypeChanged = tbcol.Attribute.DbType.StartsWith("int", StringComparison.CurrentCultureIgnoreCase) == false;
+                                else if (tbstructcol.sqlType.StartsWith("tinyint", StringComparison.CurrentCultureIgnoreCase)) isDbTypeChanged = tbcol.Attribute.DbType.StartsWith("tinyint", StringComparison.CurrentCultureIgnoreCase) == false;
+                                else if (tbstructcol.sqlType.StartsWith("smallint", StringComparison.CurrentCultureIgnoreCase)) isDbTypeChanged = tbcol.Attribute.DbType.StartsWith("smallint", StringComparison.CurrentCultureIgnoreCase) == false;
+                                else if (tbstructcol.sqlType.StartsWith("bigint", StringComparison.CurrentCultureIgnoreCase)) isDbTypeChanged = tbcol.Attribute.DbType.StartsWith("bigint", StringComparison.CurrentCultureIgnoreCase) == false;
 
                                 if ((tbcol.Attribute.DbType.IndexOf(" unsigned", StringComparison.CurrentCultureIgnoreCase) != -1) != tbstructcol.is_unsigned ||
                                 isDbTypeChanged ||

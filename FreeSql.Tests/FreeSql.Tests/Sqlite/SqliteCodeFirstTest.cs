@@ -293,7 +293,7 @@ namespace FreeSql.Tests.Sqlite
                 SByteNullable = 99,
                 Short = short.MaxValue,
                 ShortNullable = short.MinValue,
-                String = "我是中国人string",
+                String = "我是中国人string'\\?!@#$%^&*()_+{}}{~?><<>",
                 TimeSpan = TimeSpan.FromSeconds(999),
                 TimeSpanNullable = TimeSpan.FromSeconds(60),
                 UInt = uint.MaxValue,
@@ -306,6 +306,11 @@ namespace FreeSql.Tests.Sqlite
             };
             item2.Id = (int)insert.AppendData(item2).ExecuteIdentity();
             var newitem2 = select.Where(a => a.Id == item2.Id).ToOne();
+            Assert.Equal(item2.String, newitem2.String);
+
+            item2.Id = (int)insert.NoneParameter().AppendData(item2).ExecuteIdentity();
+            newitem2 = select.Where(a => a.Id == item2.Id).ToOne();
+            Assert.Equal(item2.String, newitem2.String);
 
             var items = select.ToList();
         }
@@ -366,6 +371,11 @@ namespace FreeSql.Tests.Sqlite
             public TableAllTypeEnumType1? Enum1Nullable { get; set; }
             public TableAllTypeEnumType2 Enum2 { get; set; }
             public TableAllTypeEnumType2? Enum2Nullable { get; set; }
+
+            public TableAllTypeEnumType3 testFieldEnum3 { get; set; }
+            public TableAllTypeEnumType3? testFieldEnum3Nullable { get; set; }
+
+            public enum TableAllTypeEnumType3 { }
         }
 
         public enum TableAllTypeEnumType1 { e1, e2, e3, e5 }

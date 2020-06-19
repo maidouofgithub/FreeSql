@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Data.Odbc;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 
@@ -49,8 +50,8 @@ namespace FreeSql.Odbc.PostgreSQL
                     if (genericTypesFirst.IsEnum) enumType = genericTypesFirst;
                 }
                 if (enumType != null) return enumType.GetCustomAttributes(typeof(FlagsAttribute), false).Any() ?
-                    getParamterArrayValue(typeof(long), value, elementType.IsEnum ? null : Enum.GetValues(enumType).GetValue(0)) :
-                    getParamterArrayValue(typeof(int), value, elementType.IsEnum ? null : Enum.GetValues(enumType).GetValue(0));
+                    getParamterArrayValue(typeof(long), value, elementType.IsEnum ? null : enumType.CreateInstanceGetDefaultValue()) :
+                    getParamterArrayValue(typeof(int), value, elementType.IsEnum ? null : enumType.CreateInstanceGetDefaultValue());
                 return dicGetParamterValue.TryGetValue(type.FullName, out var trydicarr) ? trydicarr(value) : value;
             }
             if (type.IsNullableType()) type = type.GetGenericArguments().First();
@@ -110,7 +111,7 @@ namespace FreeSql.Odbc.PostgreSQL
             return $"{nametrim.Trim('"').Replace("\".\"", ".").Replace(".\"", ".")}";
         }
         public override string[] SplitTableName(string name) => GetSplitTableNames(name, '"', '"', 2);
-        public override string QuoteParamterName(string name) => $"@{(_orm.CodeFirst.IsSyncStructureToLower ? name.ToLower() : name)}";
+        public override string QuoteParamterName(string name) => $"@{(name.ToLower())}";
         public override string IsNull(string sql, object value) => $"coalesce({sql}, {value})";
         public override string StringConcat(string[] objs, Type[] types) => $"{string.Join(" || ", objs)}";
         public override string Mod(string left, string right, Type leftType, Type rightType) => $"{left} % {right}";
@@ -124,6 +125,7 @@ namespace FreeSql.Odbc.PostgreSQL
         public override string GetNoneParamaterSqlValue(List<DbParameter> specialParams, Type type, object value)
         {
             if (value == null) return "NULL";
+            if (type.IsNumberType()) return string.Format(CultureInfo.InvariantCulture, "{0}", value);
             value = getParamterValue(type, value);
             var type2 = value.GetType();
             if (type2 == typeof(byte[])) return $"'\\x{CommonUtils.BytesSqlRaw(value as byte[])}'";

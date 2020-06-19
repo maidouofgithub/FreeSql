@@ -135,9 +135,56 @@ namespace FreeSql.Tests
             [Column(Name = "EDII_EDI_ID")] public long EdiId { get; set; }
         }
 
+        public class Song123
+        {
+            public long Id { get; set; }
+            protected Song123() { }
+            public Song123(long id) => Id = id;
+        }
+        public class Author123
+        {
+            public long Id { get; set; }
+            public long SongId { get; set; }
+            public Author123(long id, long songId)
+            {
+                Id = id;
+                SongId = songId;
+            }
+        }
+
         [Fact]
         public void Test03()
         {
+            var sqlextOver = g.sqlserver.Select<Edi, EdiItem>()
+                .InnerJoin((a, b) => b.Id == a.Id)
+                .ToSql((a, b) => new
+                {
+                    Id = a.Id,
+                    EdiId = b.Id,
+                    over1 = SqlExt.Rank().Over().OrderBy(a.Id).OrderByDescending(b.EdiId).ToValue()
+                });
+            var sqlextOverToList = g.sqlserver.Select<Edi, EdiItem>()
+                .InnerJoin((a, b) => b.Id == a.Id)
+                .ToList((a, b) => new
+                {
+                    Id = a.Id,
+                    EdiId = b.Id,
+                    over1 = SqlExt.Rank().Over().OrderBy(a.Id).OrderByDescending(b.EdiId).ToValue()
+                });
+
+            var tttrule = 8;
+            var tttid = new long[] { 18, 19, 4017 };
+            g.sqlserver.Update<Author123>().Set(it => it.SongId == (short)(it.SongId & ~tttrule)).Where(it => (it.SongId & tttrule) == tttrule && !tttid.Contains(it.Id)).ExecuteAffrows();
+
+            g.sqlite.Delete<Song123>().Where("1=1").ExecuteAffrows();
+            g.sqlite.Delete<Author123>().Where("1=1").ExecuteAffrows();
+            g.sqlite.Insert(new Song123(1)).ExecuteAffrows();
+            g.sqlite.Insert(new Author123(11, 1)).ExecuteAffrows();
+            var song = g.sqlite.Select<Song123>()
+                .From<Author123>((a, b) => a.InnerJoin(a1 => a1.Id == b.SongId))
+                .First((a, b) => a); // throw error
+            Console.WriteLine(song == null);
+
             g.sqlite.Select<Edi>().ToList();
 
             var itemId2 = 2;
@@ -147,7 +194,10 @@ namespace FreeSql.Tests
                 .First(a => a); //#231
 
             var lksdjkg1 = g.sqlite.Select<Edi>()
-                .AsQueryable().Where(a => a.Id > 0).ToList();
+                .AsQueryable().Where(a => a.Id > 0).Where(a => a.Id == 1).ToList();
+
+            var lksdjkg11 = g.sqlite.Select<Edi>()
+               .AsQueryable().Where(a => a.Id > 0).Where(a => a.Id == 1).Any();
 
             var lksdjkg2 = g.sqlite.Select<Edi>()
                 .AsQueryable().Where(a => a.Id > 0).First();
@@ -232,7 +282,7 @@ namespace FreeSql.Tests
 
             //File.WriteAllBytes(@"C:\Users\28810\Desktop\71500003-0ad69400-289e-11ea-85cb-36a54f52ebc0_write.png", getTestByte.pic);
 
-            var ib = new IdleBus<IFreeSql>(TimeSpan.FromMinutes(10), 2);
+            var ib = new IdleBus<IFreeSql>(TimeSpan.FromMinutes(10));
             ib.Notice += (_, e2) => Trace.WriteLine($"[{DateTime.Now.ToString("HH:mm:ss")}] 线程{Thread.CurrentThread.ManagedThreadId}：{e2.Log}");
 
             ib.Register("db1", () => new FreeSql.FreeSqlBuilder()
@@ -328,7 +378,7 @@ namespace FreeSql.Tests
 
         class TestORC12
         {
-            [Column(IsIdentity = true, InsertValueSql = "\"CLASS1_seq_ID\".nextval")]
+            [Column(IsIdentity = true, InsertValueSql = "\"TAG_SEQ_ID\".nextval")]
             public int Id { get; set; }
         }
 

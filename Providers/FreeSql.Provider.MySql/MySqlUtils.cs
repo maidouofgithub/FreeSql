@@ -4,6 +4,7 @@ using MySql.Data.MySqlClient;
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
+using System.Globalization;
 
 namespace FreeSql.MySql
 {
@@ -86,7 +87,7 @@ namespace FreeSql.MySql
             return $"{nametrim.Trim('`').Replace("`.`", ".").Replace(".`", ".")}";
         }
         public override string[] SplitTableName(string name) => GetSplitTableNames(name, '`', '`', 2);
-        public override string QuoteParamterName(string name) => $"?{(_orm.CodeFirst.IsSyncStructureToLower ? name.ToLower() : name)}";
+        public override string QuoteParamterName(string name) => $"?{name}";
         public override string IsNull(string sql, object value) => $"ifnull({sql}, {value})";
         public override string StringConcat(string[] objs, Type[] types) => $"concat({string.Join(", ", objs)})";
         public override string Mod(string left, string right, Type leftType, Type rightType) => $"{left} % {right}";
@@ -124,6 +125,7 @@ namespace FreeSql.MySql
         public override string GetNoneParamaterSqlValue(List<DbParameter> specialParams, Type type, object value)
         {
             if (value == null) return "NULL";
+            if (type.IsNumberType()) return string.Format(CultureInfo.InvariantCulture, "{0}", value);
             if (type == typeof(byte[])) return $"0x{CommonUtils.BytesSqlRaw(value as byte[])}";
             if (type == typeof(TimeSpan) || type == typeof(TimeSpan?))
             {

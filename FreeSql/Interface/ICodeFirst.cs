@@ -17,7 +17,7 @@ namespace FreeSql
         /// </summary>
         bool IsSyncStructureToLower { get; set; }
         /// <summary>
-        /// 转大写同步结构，适用 Oracle/达梦
+        /// 转大写同步结构，适用 Oracle/达梦/人大金仓
         /// </summary>
         bool IsSyncStructureToUpper { get; set; }
         /// <summary>
@@ -86,21 +86,21 @@ namespace FreeSql
         /// <returns></returns>
         DbInfoResult GetDbInfo(Type type);
         /// <summary>
-        /// 在外部配置实体的特性
+        /// FreeSql FluentApi 配置实体，方法名与特性相同
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="entity"></param>
         /// <returns></returns>
         ICodeFirst ConfigEntity<T>(Action<TableFluent<T>> entity);
         /// <summary>
-        /// 在外部配置实体的特性
+        /// FreeSql FluentApi 配置实体，方法名与特性相同
         /// </summary>
         /// <param name="type"></param>
         /// <param name="entity"></param>
         /// <returns></returns>
         ICodeFirst ConfigEntity(Type type, Action<TableFluent> entity);
         /// <summary>
-        /// 获取在外部配置实体的特性
+        /// 获取 FreeSql FluentApi 配置实体的元数据
         /// </summary>
         /// <param name="type"></param>
         /// <returns>未使用ConfigEntity配置时，返回null</returns>

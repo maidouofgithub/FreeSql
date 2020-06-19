@@ -15,20 +15,20 @@ namespace FreeSql.Internal.CommonProvider
 
     public abstract partial class InsertProvider<T1> : IInsert<T1> where T1 : class
     {
-        protected IFreeSql _orm;
-        protected CommonUtils _commonUtils;
-        protected CommonExpression _commonExpression;
-        protected List<T1> _source = new List<T1>();
-        protected Dictionary<string, bool> _ignore = new Dictionary<string, bool>(StringComparer.CurrentCultureIgnoreCase);
-        protected Dictionary<string, bool> _auditValueChangedDict = new Dictionary<string, bool>(StringComparer.CurrentCultureIgnoreCase);
-        protected TableInfo _table;
-        protected Func<string, string> _tableRule;
-        protected bool _noneParameter, _insertIdentity;
-        protected int _batchValuesLimit, _batchParameterLimit;
-        protected bool _batchAutoTransaction = true;
-        protected DbParameter[] _params;
-        protected DbTransaction _transaction;
-        protected DbConnection _connection;
+        public IFreeSql _orm;
+        public CommonUtils _commonUtils;
+        public CommonExpression _commonExpression;
+        public List<T1> _source = new List<T1>();
+        public Dictionary<string, bool> _ignore = new Dictionary<string, bool>(StringComparer.CurrentCultureIgnoreCase);
+        public Dictionary<string, bool> _auditValueChangedDict = new Dictionary<string, bool>(StringComparer.CurrentCultureIgnoreCase);
+        public TableInfo _table;
+        public Func<string, string> _tableRule;
+        public bool _noneParameter, _insertIdentity;
+        public int _batchValuesLimit, _batchParameterLimit;
+        public bool _batchAutoTransaction = true;
+        public DbParameter[] _params;
+        public DbTransaction _transaction;
+        public DbConnection _connection;
 
         public InsertProvider(IFreeSql orm, CommonUtils commonUtils, CommonExpression commonExpression)
         {
@@ -134,11 +134,22 @@ namespace FreeSql.Internal.CommonProvider
         public static void AuditDataValue(object sender, T1 data, IFreeSql orm, TableInfo table, Dictionary<string, bool> changedDict)
         {
             if (data == null) return;
-            if (typeof(T1) == typeof(object) && data.GetType() != table.Type)
+            if (typeof(T1) == typeof(object) && new[] { table.Type, table.TypeLazy }.Contains(data.GetType()) == false)
                 throw new Exception($"操作的数据类型({data.GetType().DisplayCsharp()}) 与 AsType({table.Type.DisplayCsharp()}) 不一致，请检查。");
             foreach (var col in table.Columns.Values)
             {
                 object val = col.GetMapValue(data);
+                if (orm.Aop.AuditValueHandler != null)
+                {
+                    var auditArgs = new Aop.AuditValueEventArgs(Aop.AuditValueType.Insert, col, table.Properties[col.CsName], val);
+                    orm.Aop.AuditValueHandler(sender, auditArgs);
+                    if (auditArgs.IsChanged)
+                    {
+                        col.SetMapValue(data, val = auditArgs.Value);
+                        if (changedDict != null && changedDict.ContainsKey(col.Attribute.Name) == false)
+                            changedDict.Add(col.Attribute.Name, true);
+                    }
+                }
                 if (col.Attribute.IsPrimary)
                 {
                     if (col.Attribute.MapType.NullableTypeOrThis() == typeof(Guid) && (val == null || (Guid)val == Guid.Empty))
@@ -151,17 +162,6 @@ namespace FreeSql.Internal.CommonProvider
                             orm.SetEntityValueWithPropertyName(table.Type, data, col.CsName, FreeUtil.NewMongodbId());
                             val = col.GetMapValue(data);
                         }
-                    }
-                }
-                if (orm.Aop.AuditValueHandler != null)
-                {
-                    var auditArgs = new Aop.AuditValueEventArgs(Aop.AuditValueType.Insert, col, table.Properties[col.CsName], val);
-                    orm.Aop.AuditValueHandler(sender, auditArgs);
-                    if (auditArgs.IsChanged)
-                    {
-                        col.SetMapValue(data, val = auditArgs.Value);
-                        if (changedDict != null && changedDict.ContainsKey(col.Attribute.Name) == false)
-                            changedDict.Add(col.Attribute.Name, true);
                     }
                 }
             }
@@ -442,19 +442,24 @@ namespace FreeSql.Internal.CommonProvider
         public abstract long ExecuteIdentity();
         public abstract List<T1> ExecuteInserted();
 
-        public IInsert<T1> IgnoreColumns(Expression<Func<T1, object>> columns)
+        public IInsert<T1> IgnoreColumns(Expression<Func<T1, object>> columns) => IgnoreColumns(_commonExpression.ExpressionSelectColumns_MemberAccess_New_NewArrayInit(null, columns?.Body, false, null));
+        public IInsert<T1> InsertColumns(Expression<Func<T1, object>> columns) => InsertColumns(_commonExpression.ExpressionSelectColumns_MemberAccess_New_NewArrayInit(null, columns?.Body, false, null));
+
+        public IInsert<T1> IgnoreColumns(string[] columns)
         {
-            var cols = _commonExpression.ExpressionSelectColumns_MemberAccess_New_NewArrayInit(null, columns?.Body, false, null).Distinct();
-            _ignore.Clear();
-            foreach (var col in cols) _ignore.Add(col, true);
-            return this;
-        }
-        public IInsert<T1> InsertColumns(Expression<Func<T1, object>> columns)
-        {
-            var cols = _commonExpression.ExpressionSelectColumns_MemberAccess_New_NewArrayInit(null, columns?.Body, false, null).ToDictionary(a => a, a => true);
+            var cols = columns.Distinct().ToDictionary(a => a);
             _ignore.Clear();
             foreach (var col in _table.Columns.Values)
-                if (cols.ContainsKey(col.Attribute.Name) == false && _auditValueChangedDict.ContainsKey(col.Attribute.Name) == false)
+                if (cols.ContainsKey(col.Attribute.Name) == true || cols.ContainsKey(col.CsName) == true)
+                    _ignore.Add(col.Attribute.Name, true);
+            return this;
+        }
+        public IInsert<T1> InsertColumns(string[] columns)
+        {
+            var cols = columns.Distinct().ToDictionary(a => a);
+            _ignore.Clear();
+            foreach (var col in _table.Columns.Values)
+                if (cols.ContainsKey(col.Attribute.Name) == false && cols.ContainsKey(col.CsName) == false && _auditValueChangedDict.ContainsKey(col.Attribute.Name) == false)
                     _ignore.Add(col.Attribute.Name, true);
             return this;
         }
@@ -496,7 +501,7 @@ namespace FreeSql.Internal.CommonProvider
             var colidx = 0;
             foreach (var col in _table.Columns.Values)
             {
-                if (col.Attribute.IsIdentity && _insertIdentity == false) continue;
+                if (col.Attribute.IsIdentity && _insertIdentity == false && string.IsNullOrEmpty(col.DbInsertValue)) continue;
                 if (col.Attribute.IsIdentity == false && _ignore.ContainsKey(col.Attribute.Name)) continue;
 
                 if (colidx > 0) sb.Append(", ");
@@ -504,7 +509,7 @@ namespace FreeSql.Internal.CommonProvider
                 ++colidx;
             }
             sb.Append(") ");
-            if (isValues) sb.Append(isValues ? "VALUES" : "SELECT ");
+            if (isValues) sb.Append("VALUES");
             _params = _noneParameter ? new DbParameter[0] : new DbParameter[colidx * _source.Count];
             var specialParams = new List<DbParameter>();
             var didx = 0;
@@ -515,7 +520,7 @@ namespace FreeSql.Internal.CommonProvider
                 var colidx2 = 0;
                 foreach (var col in _table.Columns.Values)
                 {
-                    if (col.Attribute.IsIdentity && _insertIdentity == false) continue;
+                    if (col.Attribute.IsIdentity && _insertIdentity == false && string.IsNullOrEmpty(col.DbInsertValue)) continue;
                     if (col.Attribute.IsIdentity == false && _ignore.ContainsKey(col.Attribute.Name)) continue;
 
                     if (colidx2 > 0) sb.Append(", ");

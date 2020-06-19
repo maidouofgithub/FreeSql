@@ -90,11 +90,11 @@
             Oracle -> nvarchar2(100)<para></para>
             Sqlite -> nvarchar(100)<para></para>
             ---<para></para>
-            StringLength = -1 时，对应 DbType：<para></para>
-            MySql -> text<para></para>
+            StringLength &lt; 0 时，对应 DbType：<para></para>
+            MySql -> text (StringLength = -2 时，对应 DbType longtext)<para></para>
             SqlServer -> nvarchar(max)<para></para>
             PostgreSQL -> text<para></para>
-            Oracle -> nvarchar2(4000)<para></para>
+            Oracle -> nclob<para></para>
             Sqlite -> text<para></para>
             </summary>
         </member>
@@ -440,6 +440,16 @@
             备注
             </summary>
         </member>
+        <member name="P:FreeSql.DatabaseModel.DbColumnInfo.DefaultValue">
+            <summary>
+            数据库默认值
+            </summary>
+        </member>
+        <member name="P:FreeSql.DatabaseModel.DbColumnInfo.Position">
+            <summary>
+            字段位置
+            </summary>
+        </member>
         <member name="P:FreeSql.DatabaseModel.DbEnumInfo.Name">
             <summary>
             枚举类型标识
@@ -528,12 +538,27 @@
         </member>
         <member name="F:FreeSql.DataType.OdbcDameng">
             <summary>
-            武汉达梦数据库有限公司
+            武汉达梦数据库有限公司，基于 Odbc 的实现
             </summary>
         </member>
         <member name="F:FreeSql.DataType.MsAccess">
             <summary>
             Microsoft Office Access 是由微软发布的关联式数据库管理系统
+            </summary>
+        </member>
+        <member name="F:FreeSql.DataType.Dameng">
+            <summary>
+            武汉达梦数据库有限公司，基于 DmProvider.dll 的实现
+            </summary>
+        </member>
+        <member name="F:FreeSql.DataType.OdbcKingbaseES">
+            <summary>
+            北京人大金仓信息技术股份有限公司，基于 Odbc 的实现
+            </summary>
+        </member>
+        <member name="F:FreeSql.DataType.ShenTong">
+            <summary>
+             天津神舟通用数据技术有限公司，基于 System.Data.OscarClient.dll 的实现
             </summary>
         </member>
         <member name="M:FreeSql.Extensions.EntityUtil.EntityUtilExtensions.GetEntityKeyString(IFreeSql,System.Type,System.Object,System.Boolean,System.String)">
@@ -740,6 +765,14 @@
             <param name="convertType"></param>
             <returns></returns>
         </member>
+        <member name="M:FreeSql.FreeSqlBuilder.UseExitAutoDisposePool(System.Boolean)">
+            <summary>
+            监听 AppDomain.CurrentDomain.ProcessExit/Console.CancelKeyPress 事件自动释放连接池<para></para>
+            默认值: true
+            </summary>
+            <param name="value"></param>
+            <returns></returns>
+        </member>
         <member name="M:FreeSql.FreeSqlBuilder.UseSyncStructureToLower(System.Boolean)">
             <summary>
             转小写同步结构
@@ -809,7 +842,7 @@
         </member>
         <member name="M:FreeSql.IDelete`1.WhereDynamic(System.Object,System.Boolean)">
             <summary>
-            传入动态对象如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
+            传入动态条件，如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
             </summary>
             <param name="dywhere">主键值、主键值集合、实体、实体集合、匿名对象、匿名对象集合</param>
             <param name="not">是否标识为NOT</param>
@@ -897,11 +930,25 @@
             <param name="columns">lambda选择列</param>
             <returns></returns>
         </member>
+        <member name="M:FreeSql.IInsert`1.InsertColumns(System.String[])">
+            <summary>
+            只插入的列
+            </summary>
+            <param name="columns">属性名，或者字段名</param>
+            <returns></returns>
+        </member>
         <member name="M:FreeSql.IInsert`1.IgnoreColumns(System.Linq.Expressions.Expression{System.Func{`0,System.Object}})">
             <summary>
             忽略的列，IgnoreColumns(a => a.Name) | IgnoreColumns(a => new{a.Name,a.Time}) | IgnoreColumns(a => new[]{"name","time"})
             </summary>
             <param name="columns">lambda选择列</param>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSql.IInsert`1.IgnoreColumns(System.String[])">
+            <summary>
+            忽略的列
+            </summary>
+            <param name="columns">属性名，或者字段名</param>
             <returns></returns>
         </member>
         <member name="M:FreeSql.IInsert`1.InsertIdentity">
@@ -982,6 +1029,60 @@
             </summary>
             <returns></returns>
         </member>
+        <member name="M:FreeSql.IInsertOrUpdate`1.WithTransaction(System.Data.Common.DbTransaction)">
+            <summary>
+            指定事务对象
+            </summary>
+            <param name="transaction"></param>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSql.IInsertOrUpdate`1.WithConnection(System.Data.Common.DbConnection)">
+            <summary>
+            指定事务对象
+            </summary>
+            <param name="connection"></param>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSql.IInsertOrUpdate`1.SetSource(`0)">
+            <summary>
+            添加或更新，设置实体
+            </summary>
+            <param name="source">实体</param>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSql.IInsertOrUpdate`1.SetSource(System.Collections.Generic.IEnumerable{`0})">
+            <summary>
+            添加或更新，设置实体集合
+            </summary>
+            <param name="source">实体集合</param>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSql.IInsertOrUpdate`1.AsTable(System.Func{System.String,System.String})">
+            <summary>
+            设置表名规则，可用于分库/分表，参数1：默认表名；返回值：新表名；
+            </summary>
+            <param name="tableRule"></param>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSql.IInsertOrUpdate`1.AsType(System.Type)">
+            <summary>
+            动态Type，在使用 Update&lt;object&gt; 后使用本方法，指定实体类型
+            </summary>
+            <param name="entityType"></param>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSql.IInsertOrUpdate`1.ToSql">
+            <summary>
+            返回即将执行的SQL语句
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSql.IInsertOrUpdate`1.ExecuteAffrows">
+            <summary>
+            执行SQL语句，返回影响的行数
+            </summary>
+            <returns></returns>
+        </member>
         <member name="F:FreeSql.FieldAliasOptions.AsIndex">
             <summary>
             自动产生 as1, as2, as3 .... 字段别名<para></para>
@@ -991,31 +1092,6 @@
         <member name="F:FreeSql.FieldAliasOptions.AsProperty">
             <summary>
             使用属性名作为字段别名
-            </summary>
-        </member>
-        <member name="M:FreeSql.ILinqToSql`1.Select``1(System.Linq.Expressions.Expression{System.Func{`0,``0}})">
-            <summary>
-            【linq to sql】专用方法，不建议直接使用
-            </summary>
-        </member>
-        <member name="M:FreeSql.ILinqToSql`1.Join``3(FreeSql.ISelect{``0},System.Linq.Expressions.Expression{System.Func{`0,``1}},System.Linq.Expressions.Expression{System.Func{``0,``1}},System.Linq.Expressions.Expression{System.Func{`0,``0,``2}})">
-            <summary>
-            【linq to sql】专用方法，不建议直接使用
-            </summary>
-        </member>
-        <member name="M:FreeSql.ILinqToSql`1.GroupJoin``3(FreeSql.ISelect{``0},System.Linq.Expressions.Expression{System.Func{`0,``1}},System.Linq.Expressions.Expression{System.Func{``0,``1}},System.Linq.Expressions.Expression{System.Func{`0,FreeSql.ISelect{``0},``2}})">
-            <summary>
-            【linq to sql】专用方法，不建议直接使用
-            </summary>
-        </member>
-        <member name="M:FreeSql.ILinqToSql`1.DefaultIfEmpty">
-            <summary>
-            【linq to sql】专用方法，不建议直接使用
-            </summary>
-        </member>
-        <member name="M:FreeSql.ILinqToSql`1.SelectMany``2(System.Linq.Expressions.Expression{System.Func{`0,FreeSql.ISelect{``0}}},System.Linq.Expressions.Expression{System.Func{`0,``0,``1}})">
-            <summary>
-            【linq to sql】专用方法，不建议直接使用
             </summary>
         </member>
         <member name="M:FreeSql.ISelect0`2.WithTransaction(System.Data.Common.DbTransaction)">
@@ -1272,6 +1348,13 @@
             <param name="parms">参数</param>
             <returns></returns>
         </member>
+        <member name="M:FreeSql.ISelect0`2.WhereDynamicFilter(FreeSql.Internal.Model.DynamicFilterInfo)">
+            <summary>
+            动态过滤条件
+            </summary>
+            <param name="filter"></param>
+            <returns></returns>
+        </member>
         <member name="M:FreeSql.ISelect0`2.DisableGlobalFilter(System.String[])">
             <summary>
             禁用全局过滤功能，不传参数时将禁用所有
@@ -1288,7 +1371,9 @@
             PostgreSQL: for update nowait<para></para>
             Oracle: for update nowait<para></para>
             Sqlite: 无效果<para></para>
-            达梦: for update nowait
+            达梦: for update nowait<para></para>
+            人大金仓: for update nowait<para></para>
+            神通: for update
             </summary>
             <param name="nowait">noawait</param>
             <returns></returns>
@@ -1658,7 +1743,7 @@
         </member>
         <member name="M:FreeSql.ISelect`1.WhereDynamic(System.Object,System.Boolean)">
             <summary>
-            传入动态对象如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
+            传入动态条件，如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
             </summary>
             <param name="dywhere">主键值、主键值集合、实体、实体集合、匿名对象、匿名对象集合</param>
             <param name="not">是否标识为NOT</param>
@@ -1746,14 +1831,6 @@
             使用 AsTable 方法也可以达到效果
             </summary>
             <param name="sql">SQL语句</param>
-            <returns></returns>
-        </member>
-        <member name="M:FreeSql.ISelect`1.AsQueryable">
-            <summary>
-            将 ISelect&lt;T1&gt; 转换为 IQueryable&lt;T1&gt;<para></para>
-            此方法主要用于扩展，比如：abp IRepository GetAll() 接口方法需要返回 IQueryable 对象<para></para>
-            注意：IQueryable 方法污染较为严重，请尽量避免此转换
-            </summary>
             <returns></returns>
         </member>
         <member name="M:FreeSql.ISelectFromExpression`1.Where(System.Linq.Expressions.Expression{System.Func{`0,System.Boolean}})">
@@ -1983,30 +2060,44 @@
             <param name="source">实体集合</param>
             <returns></returns>
         </member>
+        <member name="M:FreeSql.IUpdate`1.SetSourceIgnore(`0,System.Func{System.Object,System.Boolean})">
+            <summary>
+            更新数据，设置更新的实体，同时设置忽略的列<para></para>
+            忽略 null 属性：fsql.Update&lt;T&gt;().SetSourceAndIgnore(item, colval => colval == null)<para></para>
+            注意：参数 ignore 与 IUpdate.IgnoreColumns/UpdateColumns 不能同时使用
+            </summary>
+            <param name="source">实体</param>
+            <param name="ignore">属性值忽略判断, true忽略</param>
+            <returns></returns>
+        </member>
         <member name="M:FreeSql.IUpdate`1.IgnoreColumns(System.Linq.Expressions.Expression{System.Func{`0,System.Object}})">
             <summary>
-            忽略的列，IgnoreColumns(a => a.Name) | IgnoreColumns(a => new{a.Name,a.Time}) | IgnoreColumns(a => new[]{"name","time"})
+            忽略的列，IgnoreColumns(a => a.Name) | IgnoreColumns(a => new{a.Name,a.Time}) | IgnoreColumns(a => new[]{"name","time"})<para></para>
+            注意：不能与 UpdateColumns 不能同时使用
             </summary>
             <param name="columns">lambda选择列</param>
             <returns></returns>
         </member>
         <member name="M:FreeSql.IUpdate`1.IgnoreColumns(System.String[])">
             <summary>
-            忽略的列
+            忽略的列<para></para>
+            注意：不能与 UpdateColumns 不能同时使用
             </summary>
             <param name="columns">属性名，或者字段名</param>
             <returns></returns>
         </member>
         <member name="M:FreeSql.IUpdate`1.UpdateColumns(System.Linq.Expressions.Expression{System.Func{`0,System.Object}})">
             <summary>
-            指定的列，UpdateColumns(a => a.Name) | UpdateColumns(a => new{a.Name,a.Time}) | UpdateColumns(a => new[]{"name","time"})
+            指定的列，UpdateColumns(a => a.Name) | UpdateColumns(a => new{a.Name,a.Time}) | UpdateColumns(a => new[]{"name","time"})<para></para>
+            注意：不能与 IgnoreColumns 不能同时使用
             </summary>
             <param name="columns">lambda选择列</param>
             <returns></returns>
         </member>
         <member name="M:FreeSql.IUpdate`1.UpdateColumns(System.String[])">
             <summary>
-            指定的列
+            指定的列<para></para>
+            注意：不能与 IgnoreColumns 同时使用
             </summary>
             <param name="columns">属性名，或者字段名</param>
             <returns></returns>
@@ -2016,6 +2107,16 @@
             设置列的新值，Set(a => a.Name, "newvalue")
             </summary>
             <typeparam name="TMember"></typeparam>
+            <param name="column">lambda选择列</param>
+            <param name="value">新值</param>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSql.IUpdate`1.SetIf``1(System.Boolean,System.Linq.Expressions.Expression{System.Func{`0,``0}},``0)">
+            <summary>
+            设置列的新值，Set(a => a.Name, "newvalue")
+            </summary>
+            <typeparam name="TMember"></typeparam>
+            <param name="condition">true 时生效</param>
             <param name="column">lambda选择列</param>
             <param name="value">新值</param>
             <returns></returns>
@@ -2030,6 +2131,17 @@
             <param name="exp"></param>
             <returns></returns>
         </member>
+        <member name="M:FreeSql.IUpdate`1.SetIf``1(System.Boolean,System.Linq.Expressions.Expression{System.Func{`0,``0}})">
+            <summary>
+            设置列的的新值为基础上增加，格式：Set(a => a.Clicks + 1) 相当于 clicks=clicks+1
+            <para></para>
+            指定更新，格式：Set(a => new T { Clicks = a.Clicks + 1, Time = DateTime.Now }) 相当于 set clicks=clicks+1,time='2019-06-19....'
+            </summary>
+            <typeparam name="TMember"></typeparam>
+            <param name="condition">true 时生效</param>
+            <param name="exp"></param>
+            <returns></returns>
+        </member>
         <member name="M:FreeSql.IUpdate`1.SetRaw(System.String,System.Object)">
             <summary>
             设置值，自定义SQL语法，SetRaw("title = ?title", new { title = "newtitle" })
@@ -2040,11 +2152,10 @@
         </member>
         <member name="M:FreeSql.IUpdate`1.SetDto(System.Object)">
             <summary>
-            设置更新的列
-            <para></para>
-            SetDto(new { title = "xxx", clicks = 2 })
-            <para></para>
-            SetDto(new Dictionary&lt;string, object&gt; { ["title"] = "xxx", ["clicks"] = 2 })
+            设置更新的列<para></para>
+            SetDto(new { title = "xxx", clicks = 2 })<para></para>
+            SetDto(new Dictionary&lt;string, object&gt; { ["title"] = "xxx", ["clicks"] = 2 })<para></para>
+            注意：标记 [Column(CanUpdate = false)] 的属性不会被更新
             </summary>
             <param name="dto">dto 或 Dictionary&lt;string, object&gt;</param>
             <returns></returns>
@@ -2081,7 +2192,7 @@
         </member>
         <member name="M:FreeSql.IUpdate`1.WhereDynamic(System.Object,System.Boolean)">
             <summary>
-            传入动态对象如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
+            传入动态条件，如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
             </summary>
             <param name="dywhere">主键值、主键值集合、实体、实体集合、匿名对象、匿名对象集合</param>
             <param name="not">是否标识为NOT</param>
@@ -2152,26 +2263,23 @@
             UseSalve 时候的值
             </summary>
         </member>
-        <member name="M:FreeSql.IAdo.Transaction(System.Action)">
+        <member name="P:FreeSql.IAdo.Identifier">
             <summary>
-            开启事务（不支持异步），60秒未执行完成（可能）被其他线程事务自动提交
+            唯一标识
             </summary>
-            <param name="handler">事务体 () => {}</param>
         </member>
-        <member name="M:FreeSql.IAdo.Transaction(System.TimeSpan,System.Action)">
+        <member name="M:FreeSql.IAdo.Transaction(System.Action)">
             <summary>
             开启事务（不支持异步）
             </summary>
-            <param name="timeout">超时，未执行完成（可能）被其他线程事务自动提交</param>
             <param name="handler">事务体 () => {}</param>
         </member>
-        <member name="M:FreeSql.IAdo.Transaction(System.Data.IsolationLevel,System.TimeSpan,System.Action)">
+        <member name="M:FreeSql.IAdo.Transaction(System.Data.IsolationLevel,System.Action)">
             <summary>
             开启事务（不支持异步）
             </summary>
             <param name="isolationLevel"></param>
             <param name="handler">事务体 () => {}</param>
-            <param name="timeout">超时，未执行完成（可能）被其他线程事务自动提交</param>
         </member>
         <member name="P:FreeSql.IAdo.TransactionCurrentThread">
             <summary>
@@ -2707,7 +2815,7 @@
         </member>
         <member name="P:FreeSql.ICodeFirst.IsSyncStructureToUpper">
             <summary>
-            转大写同步结构，适用 Oracle/达梦
+            转大写同步结构，适用 Oracle/达梦/人大金仓
             </summary>
         </member>
         <member name="P:FreeSql.ICodeFirst.IsConfigEntityFromDbFirst">
@@ -2786,7 +2894,7 @@
         </member>
         <member name="M:FreeSql.ICodeFirst.ConfigEntity``1(System.Action{FreeSql.DataAnnotations.TableFluent{``0}})">
             <summary>
-            在外部配置实体的特性
+            FreeSql FluentApi 配置实体，方法名与特性相同
             </summary>
             <typeparam name="T"></typeparam>
             <param name="entity"></param>
@@ -2794,7 +2902,7 @@
         </member>
         <member name="M:FreeSql.ICodeFirst.ConfigEntity(System.Type,System.Action{FreeSql.DataAnnotations.TableFluent})">
             <summary>
-            在外部配置实体的特性
+            FreeSql FluentApi 配置实体，方法名与特性相同
             </summary>
             <param name="type"></param>
             <param name="entity"></param>
@@ -2802,7 +2910,7 @@
         </member>
         <member name="M:FreeSql.ICodeFirst.GetConfigEntity(System.Type)">
             <summary>
-            获取在外部配置实体的特性
+            获取 FreeSql FluentApi 配置实体的元数据
             </summary>
             <param name="type"></param>
             <returns>未使用ConfigEntity配置时，返回null</returns>
@@ -2890,6 +2998,13 @@
             <param name="database"></param>
             <returns></returns>
         </member>
+        <member name="M:FreeSql.Internal.CommonProvider.InsertOrUpdateProvider`1.SplitSourceByIdentityValueIsNull(System.Collections.Generic.List{`0})">
+            <summary>
+            如果实体类有自增属性，分成两个 List，有值的Item1 merge，无值的Item2 insert
+            </summary>
+            <param name="source"></param>
+            <returns></returns>
+        </member>
         <member name="M:FreeSql.Internal.CommonProvider.InsertProvider`1.IgnoreCanInsert">
             <summary>
             AsType, Ctor, ClearData 三处地方需要重新加载
@@ -2899,6 +3014,13 @@
             <summary>
             AsType, Ctor, ClearData 三处地方需要重新加载
             </summary>
+        </member>
+        <member name="M:FreeSql.Internal.CommonUtils.GetPropertyCommentByDescriptionAttribute(System.Type)">
+            <summary>
+            动态读取 DescriptionAttribute 注释文本
+            </summary>
+            <param name="type"></param>
+            <returns></returns>
         </member>
         <member name="M:FreeSql.Internal.CommonUtils.GetProperyCommentBySummary(System.Type)">
             <summary>
@@ -2915,6 +3037,118 @@
             <param name="name">名字</param>
             <param name="where">表达式</param>
             <returns></returns>
+        </member>
+        <member name="T:FreeSql.Internal.Model.DynamicFilterInfo">
+            <summary>
+            动态过滤条件
+            </summary>
+        </member>
+        <member name="P:FreeSql.Internal.Model.DynamicFilterInfo.Field">
+            <summary>
+            属性名：Name<para></para>
+            导航属性：Parent.Name<para></para>
+            多表：b.Name<para></para>
+            </summary>
+        </member>
+        <member name="P:FreeSql.Internal.Model.DynamicFilterInfo.Operator">
+            <summary>
+            操作符
+            </summary>
+        </member>
+        <member name="P:FreeSql.Internal.Model.DynamicFilterInfo.Value">
+            <summary>
+            值
+            </summary>
+        </member>
+        <member name="P:FreeSql.Internal.Model.DynamicFilterInfo.Logic">
+            <summary>
+            Filters 下的逻辑运算符
+            </summary>
+        </member>
+        <member name="P:FreeSql.Internal.Model.DynamicFilterInfo.Filters">
+            <summary>
+            子过滤条件，它与当前的逻辑关系是 And<para></para>
+            注意：当前 Field 可以留空
+            </summary>
+        </member>
+        <member name="F:FreeSql.Internal.Model.DynamicFilterOperator.Contains">
+            <summary>
+            like
+            </summary>
+        </member>
+        <member name="F:FreeSql.Internal.Model.DynamicFilterOperator.Equal">
+            <summary>
+            =<para></para>
+            Equal/Equals/Eq 效果相同
+            </summary>
+        </member>
+        <member name="F:FreeSql.Internal.Model.DynamicFilterOperator.Equals">
+            <summary>
+            =<para></para>
+            Equal/Equals/Eq 效果相同
+            </summary>
+        </member>
+        <member name="F:FreeSql.Internal.Model.DynamicFilterOperator.Eq">
+            <summary>
+            =<para></para>
+            Equal/Equals/Eq 效果相同
+            </summary>
+        </member>
+        <member name="F:FreeSql.Internal.Model.DynamicFilterOperator.NotEqual">
+            <summary>
+            &lt;&gt;
+            </summary>
+        </member>
+        <member name="F:FreeSql.Internal.Model.DynamicFilterOperator.GreaterThan">
+            <summary>
+            &gt;
+            </summary>
+        </member>
+        <member name="F:FreeSql.Internal.Model.DynamicFilterOperator.GreaterThanOrEqual">
+            <summary>
+            &gt;=
+            </summary>
+        </member>
+        <member name="F:FreeSql.Internal.Model.DynamicFilterOperator.LessThan">
+            <summary>
+            &lt;
+            </summary>
+        </member>
+        <member name="F:FreeSql.Internal.Model.DynamicFilterOperator.LessThanOrEqual">
+            <summary>
+            &lt;=
+            </summary>
+        </member>
+        <member name="F:FreeSql.Internal.Model.DynamicFilterOperator.Range">
+            <summary>
+            &gt;= and &lt;<para></para>
+            此时 Value 的值格式为逗号分割：value1,value2 或者数组
+            </summary>
+        </member>
+        <member name="F:FreeSql.Internal.Model.DynamicFilterOperator.DateRange">
+            <summary>
+            &gt;= and &lt;<para></para>
+            此时 Value 的值格式为逗号分割：date1,date2 或者数组<para></para>
+            这是专门为日期范围查询定制的操作符，它会处理 date2 + 1，比如：<para></para>
+            当 date2 选择的是 2020-05-30，那查询的时候是 &lt; 2020-05-31<para></para>
+            当 date2 选择的是 2020-05，那查询的时候是 &lt; 2020-06<para></para>
+            当 date2 选择的是 2020，那查询的时候是 &lt; 2021<para></para>
+            当 date2 选择的是 2020-05-30 12，那查询的时候是 &lt; 2020-05-30 13<para></para>
+            当 date2 选择的是 2020-05-30 12:30，那查询的时候是 &lt; 2020-05-30 12:31<para></para>
+            并且 date2 只支持以上 5 种格式 (date1 没有限制)
+            </summary>
+        </member>
+        <member name="F:FreeSql.Internal.Model.DynamicFilterOperator.Any">
+            <summary>
+            in (1,2,3)<para></para>
+            此时 Value 的值格式为逗号分割：value1,value2,value3... 或者数组
+            </summary>
+        </member>
+        <member name="F:FreeSql.Internal.Model.DynamicFilterOperator.NotAny">
+            <summary>
+            not in (1,2,3)<para></para>
+            此时 Value 的值格式为逗号分割：value1,value2,value3... 或者数组
+            </summary>
         </member>
         <member name="P:FreeSql.Internal.Model.TableRef.RefMiddleEntityType">
             <summary>
@@ -3225,7 +3459,7 @@
             BigApple -> bigapple
             </summary>
         </member>
-        <member name="M:FreeSqlGlobalExpressionCall.Between(System.DateTime,System.DateTime,System.DateTime)">
+        <member name="M:FreeSqlGlobalExpressionCallExtensions.Between(System.DateTime,System.DateTime,System.DateTime)">
             <summary>
             C#： that >= between &amp;&amp; that &lt;= and<para></para>
             SQL： that BETWEEN between AND and
@@ -3235,7 +3469,7 @@
             <param name="and"></param>
             <returns></returns>
         </member>
-        <member name="M:FreeSqlGlobalExpressionCall.BetweenEnd(System.DateTime,System.DateTime,System.DateTime)">
+        <member name="M:FreeSqlGlobalExpressionCallExtensions.BetweenEnd(System.DateTime,System.DateTime,System.DateTime)">
             <summary>
             注意：这个方法和 Between 有细微区别<para></para>
             C#： that >= start &amp;&amp; that &lt; end<para></para>
@@ -3263,7 +3497,7 @@
         </member>
         <member name="M:FreeSqlGlobalExtensions.AsSelect``1(System.Collections.Generic.IEnumerable{``0})">
             <summary>
-            将 IEnumable&lt;T&gt; 转成 ISelect&lt;T&gt;，以便使用 FreeSql 的查询功能。此方法用于 Lambad 表达式中，快速进行集合导航的查询。
+            将 IEnumable&lt;T&gt; 转成 ISelect&lt;T&gt;，以便使用 FreeSql 的查询功能。此方法用于 Lambda 表达式中，快速进行集合导航的查询。
             </summary>
             <typeparam name="TEntity"></typeparam>
             <param name="that"></param>
@@ -3582,6 +3816,20 @@
             <param name="source"></param>
             <returns></returns>
         </member>
+        <member name="M:IFreeSql.InsertOrUpdate``1">
+            <summary>
+            插入或更新数据<para></para>
+            MySql: on duplicate key update<para></para>
+            PostgreSQL: on conflict do update<para></para>
+            SqlServer: merge into<para></para>
+            Oracle: merge into<para></para>
+            Sqlite: replace into<para></para>
+            Dameng: merge into<para></para>
+            注意：还可以使用 FreeSql.Repository 的 InsertOrUpdate 方法
+            </summary>
+            <typeparam name="T1"></typeparam>
+            <returns></returns>
+        </member>
         <member name="M:IFreeSql.Update``1">
             <summary>
             修改数据
@@ -3591,7 +3839,7 @@
         </member>
         <member name="M:IFreeSql.Update``1(System.Object)">
             <summary>
-            修改数据，传入动态对象如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
+            修改数据，传入动态条件，如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
             </summary>
             <typeparam name="T1"></typeparam>
             <param name="dywhere">主键值、主键值集合、实体、实体集合、匿名对象、匿名对象集合</param>
@@ -3606,7 +3854,7 @@
         </member>
         <member name="M:IFreeSql.Select``1(System.Object)">
             <summary>
-            查询数据，传入动态对象如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
+            查询数据，传入动态条件，如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
             </summary>
             <typeparam name="T1"></typeparam>
             <param name="dywhere">主键值、主键值集合、实体、实体集合、匿名对象、匿名对象集合</param>
@@ -3621,7 +3869,7 @@
         </member>
         <member name="M:IFreeSql.Delete``1(System.Object)">
             <summary>
-            删除数据，传入动态对象如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
+            删除数据，传入动态条件，如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
             </summary>
             <typeparam name="T1"></typeparam>
             <param name="dywhere">主键值、主键值集合、实体、实体集合、匿名对象、匿名对象集合</param>
@@ -3629,24 +3877,18 @@
         </member>
         <member name="M:IFreeSql.Transaction(System.Action)">
             <summary>
-            开启事务（不支持异步），60秒未执行完成（可能）被其他线程事务自动提交
+            开启事务（不支持异步）<para></para>
+            v1.5.0 关闭了线程事务超时自动提交的机制
             </summary>
             <param name="handler">事务体 () => {}</param>
         </member>
-        <member name="M:IFreeSql.Transaction(System.TimeSpan,System.Action)">
+        <member name="M:IFreeSql.Transaction(System.Data.IsolationLevel,System.Action)">
             <summary>
-            开启事务（不支持异步）
-            </summary>
-            <param name="timeout">超时，未执行完成（可能）被其他线程事务自动提交</param>
-            <param name="handler">事务体 () => {}</param>
-        </member>
-        <member name="M:IFreeSql.Transaction(System.Data.IsolationLevel,System.TimeSpan,System.Action)">
-            <summary>
-            开启事务（不支持异步）
+            开启事务（不支持异步）<para></para>
+            v1.5.0 关闭了线程事务超时自动提交的机制
             </summary>
             <param name="isolationLevel"></param>
             <param name="handler">事务体 () => {}</param>
-            <param name="timeout">超时，未执行完成（可能）被其他线程事务自动提交</param>
         </member>
         <member name="P:IFreeSql.Ado">
             <summary>

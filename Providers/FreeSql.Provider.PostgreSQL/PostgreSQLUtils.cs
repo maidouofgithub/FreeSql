@@ -9,6 +9,7 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Data.Common;
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text;
@@ -67,8 +68,8 @@ namespace FreeSql.PostgreSQL
                 if (elementType.IsEnum) enumType = elementType;
                 else if (elementType.IsNullableType() && elementType.GenericTypeArguments.First().IsEnum) enumType = elementType.GenericTypeArguments.First();
                 if (enumType != null) return enumType.GetCustomAttributes(typeof(FlagsAttribute), false).Any() ?
-                    getParamterArrayValue(typeof(long), value, elementType.IsEnum ? null : Enum.GetValues(enumType).GetValue(0)) :
-                    getParamterArrayValue(typeof(int), value, elementType.IsEnum ? null : Enum.GetValues(enumType).GetValue(0));
+                    getParamterArrayValue(typeof(long), value, elementType.IsEnum ? null : enumType.CreateInstanceGetDefaultValue()) :
+                    getParamterArrayValue(typeof(int), value, elementType.IsEnum ? null : enumType.CreateInstanceGetDefaultValue());
                 return dicGetParamterValue.TryGetValue(type.FullName, out var trydicarr) ? trydicarr(value) : value;
             }
             if (type.IsNullableType()) type = type.GenericTypeArguments.First();
@@ -139,7 +140,7 @@ namespace FreeSql.PostgreSQL
             return $"{nametrim.Trim('"').Replace("\".\"", ".").Replace(".\"", ".")}";
         }
         public override string[] SplitTableName(string name) => GetSplitTableNames(name, '"', '"', 2);
-        public override string QuoteParamterName(string name) => $"@{(_orm.CodeFirst.IsSyncStructureToLower ? name.ToLower() : name)}";
+        public override string QuoteParamterName(string name) => $"@{name}";
         public override string IsNull(string sql, object value) => $"coalesce({sql}, {value})";
         public override string StringConcat(string[] objs, Type[] types) => $"{string.Join(" || ", objs)}";
         public override string Mod(string left, string right, Type leftType, Type rightType) => $"{left} % {right}";
@@ -154,6 +155,7 @@ namespace FreeSql.PostgreSQL
         public override string GetNoneParamaterSqlValue(List<DbParameter> specialParams, Type type, object value)
         {
             if (value == null) return "NULL";
+            if (type.IsNumberType()) return string.Format(CultureInfo.InvariantCulture, "{0}", value);
             if (_dicIsAssignableFromPostgisGeometry.GetOrAdd(type, t2 => typeof(PostgisGeometry).IsAssignableFrom(type.IsArray ? type.GetElementType() : type)))
             {
                 var pam = AppendParamter(specialParams, null, null, type, value);

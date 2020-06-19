@@ -1,9 +1,11 @@
 ﻿using FreeSql;
 using FreeSql.DataAnnotations;
 using FreeSql.Extensions;
+using FreeSql.Internal.Model;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
+using System.Data.Odbc;
 using System.Data.SqlClient;
 using System.Diagnostics;
 using System.Linq.Expressions;
@@ -27,6 +29,8 @@ namespace base_entity
 
             [JsonMap]
             public T Config { get; set; }
+
+            public T Config2 { get; set; }
         }
 
         public class Products : BaseEntity<Products, int>
@@ -34,9 +38,10 @@ namespace base_entity
             public string title { get; set; }
         }
 
+        static AsyncLocal<IUnitOfWork> _asyncUow = new AsyncLocal<IUnitOfWork>();
+
         static void Main(string[] args)
         {
-
             #region 初始化 IFreeSql
             var fsql = new FreeSql.FreeSqlBuilder()
                 .UseAutoSyncStructure(true)
@@ -67,10 +72,10 @@ namespace base_entity
 
                 //.UseConnectionString(FreeSql.DataType.OdbcDameng, "Driver={DM8 ODBC DRIVER};Server=127.0.0.1:5236;Persist Security Info=False;Trusted_Connection=Yes;UID=USER1;PWD=123456789")
 
-                .UseMonitorCommand(cmd => Console.Write(cmd.CommandText))
+                .UseMonitorCommand(umcmd => Console.WriteLine(umcmd.CommandText))
                 .UseLazyLoading(true)
                 .Build();
-            BaseEntity.Initialization(fsql);
+            BaseEntity.Initialization(fsql, () => _asyncUow.Value);
             #endregion
 
             var test01 = EMSServerModel.Model.User.Select.IncludeMany(a => a.Roles).ToList();
@@ -85,23 +90,73 @@ namespace base_entity
             new Products { title = "product-4" }.Save();
             new Products { title = "product-5" }.Save();
 
+            Products.Select.WhereDynamicFilter(JsonConvert.DeserializeObject<DynamicFilterInfo>(@"
+{
+  ""Logic"" : ""Or"",
+  ""Filters"" :
+  [
+    {
+      ""Field"" : ""title"",
+      ""Operator"" : ""eq"",
+      ""Value"" : ""product-1"",
+      ""Filters"" :
+      [
+        {
+          ""Field"" : ""title"",
+          ""Operator"" : ""contains"",
+          ""Value"" : ""product-1111"",
+        }
+      ]
+    },
+    {
+      ""Field"" : ""title"",
+      ""Operator"" : ""eq"",
+      ""Value"" : ""product-2""
+    },
+    {
+      ""Field"" : ""title"",
+      ""Operator"" : ""eq"",
+      ""Value"" : ""product-3""
+    },
+    {
+      ""Field"" : ""title"",
+      ""Operator"" : ""eq"",
+      ""Value"" : ""product-4""
+    },
+  ]
+}
+")).ToList();
+
             var items1 = Products.Select.Limit(10).OrderByDescending(a => a.CreateTime).ToList();
             var items2 = fsql.Select<Products>().Limit(10).OrderByDescending(a => a.CreateTime).ToList();
 
             BaseEntity.Orm.UseJsonMap();
+            BaseEntity.Orm.UseJsonMap();
+            BaseEntity.Orm.CodeFirst.ConfigEntity<S_SysConfig<TestConfig>>(a =>
+            {
+                a.Property(b => b.Config2).JsonMap();
+            });
 
-            new S_SysConfig<TestConfig> { Name = "testkey11", Config = new TestConfig { clicks = 11, title = "testtitle11" } }.Save();
-            new S_SysConfig<TestConfig> { Name = "testkey22", Config = new TestConfig { clicks = 22, title = "testtitle22" } }.Save();
-            new S_SysConfig<TestConfig> { Name = "testkey33", Config = new TestConfig { clicks = 33, title = "testtitle33" } }.Save();
+            new S_SysConfig<TestConfig> { Name = "testkey11", Config = new TestConfig { clicks = 11, title = "testtitle11" }, Config2 = new TestConfig { clicks = 11, title = "testtitle11" } }.Save();
+            new S_SysConfig<TestConfig> { Name = "testkey22", Config = new TestConfig { clicks = 22, title = "testtitle22" }, Config2 = new TestConfig { clicks = 11, title = "testtitle11" } }.Save();
+            new S_SysConfig<TestConfig> { Name = "testkey33", Config = new TestConfig { clicks = 33, title = "testtitle33" }, Config2 = new TestConfig { clicks = 11, title = "testtitle11" } }.Save();
             var testconfigs11 = S_SysConfig<TestConfig>.Select.ToList();
 
             var repo = BaseEntity.Orm.Select<TestConfig>().Limit(10).ToList();
 
             Task.Run(async () =>
             {
-                using (var uow = BaseEntity.Begin())
+                using (var uow = BaseEntity.Orm.CreateUnitOfWork())
                 {
-                    var id = (await new User1().SaveAsync()).Id;
+                    _asyncUow.Value = uow;
+                    try
+                    {
+                        var id = (await new User1().SaveAsync()).Id;
+                    }
+                    finally
+                    {
+                        _asyncUow.Value = null;
+                    }
                     uow.Commit();
                 }
 

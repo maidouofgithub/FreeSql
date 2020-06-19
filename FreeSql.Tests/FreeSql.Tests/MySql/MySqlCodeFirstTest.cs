@@ -11,6 +11,94 @@ namespace FreeSql.Tests.MySql
     public class MySqlCodeFirstTest
     {
         [Fact]
+        public void Text_StringLength_1()
+        {
+            var str1 = string.Join(",", Enumerable.Range(0, 1000).Select(a => "我是中国人"));
+
+            var item1 = new TS_TEXT02 { Data = str1 };
+            Assert.Equal(1, g.mysql.Insert(item1).ExecuteAffrows());
+
+            var item2 = g.mysql.Select<TS_TEXT02>().Where(a => a.Id == item1.Id).First();
+            Assert.Equal(str1, item2.Data);
+
+            //NoneParameter
+            item1 = new TS_TEXT02 { Data = str1 };
+            Assert.Equal(1, g.mysql.Insert(item1).NoneParameter().ExecuteAffrows());
+        }
+        class TS_TEXT02
+        {
+            public Guid Id { get; set; }
+            [Column(StringLength = -1)]
+            public string Data { get; set; }
+        }
+
+        [Fact]
+        public void Text()
+        {
+            var str1 = string.Join(",", Enumerable.Range(0, 1000).Select(a => "我是中国人"));
+
+            var item1 = new TS_TEXT01 { Data = str1 };
+            Assert.Equal(1, g.mysql.Insert(item1).ExecuteAffrows());
+
+            var item2 = g.mysql.Select<TS_TEXT01>().Where(a => a.Id == item1.Id).First();
+            Assert.Equal(str1, item2.Data);
+
+            //NoneParameter
+            item1 = new TS_TEXT01 { Data = str1 };
+            Assert.Equal(1, g.mysql.Insert(item1).NoneParameter().ExecuteAffrows());
+        }
+        class TS_TEXT01
+        {
+            public Guid Id { get; set; }
+            [Column(DbType = "text")]
+            public string Data { get; set; }
+        }
+
+        [Fact]
+        public void Text_StringLength_2()
+        {
+            var str1 = string.Join(",", Enumerable.Range(0, 10000).Select(a => "我是中国人"));
+
+            var item1 = new TS_TEXT04 { Data = str1 };
+            Assert.Equal(1, g.mysql.Insert(item1).ExecuteAffrows());
+
+            var item2 = g.mysql.Select<TS_TEXT04>().Where(a => a.Id == item1.Id).First();
+            Assert.Equal(str1, item2.Data);
+
+            //NoneParameter
+            item1 = new TS_TEXT04 { Data = str1 };
+            Assert.Equal(1, g.mysql.Insert(item1).NoneParameter().ExecuteAffrows());
+        }
+        class TS_TEXT04
+        {
+            public Guid Id { get; set; }
+            [Column(StringLength = -2)]
+            public string Data { get; set; }
+        }
+
+        [Fact]
+        public void LongText()
+        {
+            var str1 = string.Join(",", Enumerable.Range(0, 10000).Select(a => "我是中国人"));
+
+            var item1 = new TS_TEXT03 { Data = str1 };
+            Assert.Equal(1, g.mysql.Insert(item1).ExecuteAffrows());
+
+            var item2 = g.mysql.Select<TS_TEXT03>().Where(a => a.Id == item1.Id).First();
+            Assert.Equal(str1, item2.Data);
+
+            //NoneParameter
+            item1 = new TS_TEXT03 { Data = str1 };
+            Assert.Equal(1, g.mysql.Insert(item1).NoneParameter().ExecuteAffrows());
+        }
+        class TS_TEXT03
+        {
+            public Guid Id { get; set; }
+            [Column(DbType = "longtext")]
+            public string Data { get; set; }
+        }
+
+        [Fact]
         public void StringLength()
         {
             var dll = g.mysql.CodeFirst.GetComparisonDDLStatements<TS_SLTB>();
@@ -274,7 +362,7 @@ namespace FreeSql.Tests.MySql
                 testFieldSByteNullable = 99,
                 testFieldShort = short.MaxValue,
                 testFieldShortNullable = short.MinValue,
-                testFieldString = "我是中国人string",
+                testFieldString = "我是中国人string'\\?!@#$%^&*()_+{}}{~?><<>",
                 testFieldTimeSpan = TimeSpan.FromSeconds(999),
                 testFieldTimeSpanNullable = TimeSpan.FromSeconds(60),
                 testFieldUInt = uint.MaxValue,
@@ -293,6 +381,11 @@ namespace FreeSql.Tests.MySql
 
             item2.Id = (int)insert.AppendData(item2).ExecuteIdentity();
             var newitem2 = select.Where(a => a.Id == item2.Id).ToOne();
+            Assert.Equal(item2.testFieldString, newitem2.testFieldString);
+
+            item2.Id = (int)insert.NoneParameter().AppendData(item2).ExecuteIdentity();
+            newitem2 = select.Where(a => a.Id == item2.Id).ToOne();
+            Assert.Equal(item2.testFieldString, newitem2.testFieldString);
 
             var items = select.ToList();
         }

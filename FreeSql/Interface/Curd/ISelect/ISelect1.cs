@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace FreeSql
 {
-    public interface ISelect<T1> : ISelect0<ISelect<T1>, T1>, ILinqToSql<T1> where T1 : class
+    public interface ISelect<T1> : ISelect0<ISelect<T1>, T1> where T1 : class
     {
 
 #if net40
@@ -292,7 +292,7 @@ namespace FreeSql
         /// <returns></returns>
         ISelect<T1> Where<T2, T3, T4, T5>(Expression<Func<T1, T2, T3, T4, T5, bool>> exp) where T2 : class where T3 : class where T4 : class where T5 : class;
         /// <summary>
-        /// 传入动态对象如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
+        /// 传入动态条件，如：主键值 | new[]{主键值1,主键值2} | TEntity1 | new[]{TEntity1,TEntity2} | new{id=1}
         /// </summary>
         /// <param name="dywhere">主键值、主键值集合、实体、实体集合、匿名对象、匿名对象集合</param>
         /// <param name="not">是否标识为NOT</param>
@@ -378,13 +378,5 @@ namespace FreeSql
         /// <param name="sql">SQL语句</param>
         /// <returns></returns>
         ISelect<T1> WithSql(string sql);
-
-        /// <summary>
-        /// 将 ISelect&lt;T1&gt; 转换为 IQueryable&lt;T1&gt;<para></para>
-        /// 此方法主要用于扩展，比如：abp IRepository GetAll() 接口方法需要返回 IQueryable 对象<para></para>
-        /// 注意：IQueryable 方法污染较为严重，请尽量避免此转换
-        /// </summary>
-        /// <returns></returns>
-        IQueryable<T1> AsQueryable();
     }
 }

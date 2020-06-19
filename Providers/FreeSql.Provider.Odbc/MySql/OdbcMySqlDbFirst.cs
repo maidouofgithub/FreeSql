@@ -208,13 +208,15 @@ ifnull(a.character_maximum_length, 0) 'len',
 a.column_type,
 case when a.is_nullable = 'YES' then 1 else 0 end 'is_nullable',
 case when locate('auto_increment', a.extra) > 0 then 1 else 0 end 'is_identity',
-a.column_comment 'comment'
+a.column_comment 'comment',
+a.column_default 'default_value'
 from information_schema.columns a
 where a.table_schema in ({1}) and {0}
 ", loc8, databaseIn);
             ds = _orm.Ado.ExecuteArray(CommandType.Text, sql);
             if (ds == null) return loc1;
 
+            var position = 0;
             foreach (var row in ds)
             {
                 string table_id = string.Concat(row[0]);
@@ -227,6 +229,7 @@ where a.table_schema in ({1}) and {0}
                 bool is_nullable = string.Concat(row[5]) == "1";
                 bool is_identity = string.Concat(row[6]) == "1";
                 string comment = string.Concat(row[7]);
+                string defaultValue = string.Concat(row[8]);
                 if (max_length == 0) max_length = -1;
                 if (database.Length == 1)
                 {
@@ -242,7 +245,9 @@ where a.table_schema in ({1}) and {0}
                     DbTypeText = type,
                     DbTypeTextFull = sqlType,
                     Table = loc2[table_id],
-                    Coment = comment
+                    Coment = comment,
+                    DefaultValue = defaultValue,
+                    Position = ++position
                 });
                 loc3[table_id][column].DbType = this.GetDbType(loc3[table_id][column]);
                 loc3[table_id][column].CsType = this.GetCsTypeInfo(loc3[table_id][column]);

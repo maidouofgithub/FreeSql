@@ -94,6 +94,20 @@ namespace FreeSql.Tests.MySql
             public string xx { get; set; }
         }
         [Fact]
+        public void SetSourceIgnore()
+        {
+            Assert.Equal("UPDATE `tssi01` SET `tint` = 10 WHERE (`id` = '00000000-0000-0000-0000-000000000000')",
+                g.mysql.Update<tssi01>().NoneParameter()
+                    .SetSourceIgnore(new tssi01 { id = Guid.Empty, tint = 10 }, col => col == null).ToSql().Replace("\r\n", ""));
+        }
+        public class tssi01
+        {
+            [Column(CanUpdate = false)]
+            public Guid id { get; set; }
+            public int tint { get; set; }
+            public string title { get; set; }
+        }
+        [Fact]
         public void IgnoreColumns()
         {
             var sql = update.SetSource(new Topic { Id = 1, Title = "newtitle" }).IgnoreColumns(a => new { a.Clicks, a.CreateTime }).ToSql().Replace("\r\n", "");
@@ -148,6 +162,9 @@ namespace FreeSql.Tests.MySql
 
             sql = update.Set(a => a.Id == 10).Where(a => a.Id == 1).ToSql().Replace("\r\n", "");
             Assert.Equal("UPDATE `tb_topic` SET `Id` = 10 WHERE (`Id` = 1)", sql);
+
+            sql = update.Set(a => a.Clicks == null).Where(a => a.Id == 1).ToSql().Replace("\r\n", "");
+            Assert.Equal("UPDATE `tb_topic` SET `Clicks` = NULL WHERE (`Id` = 1)", sql);
 
             var id = g.mysql.Insert<TestEnumUpdateTb>().AppendData(new TestEnumUpdateTb { type = TestEnumUpdateTbType.sum211 }).ExecuteIdentity();
             Assert.True(id > 0);

@@ -128,10 +128,14 @@ public static partial class FreeSqlGlobalExtensions
     {
         if (that == null) return null;
         if (that == typeof(string)) return default(string);
+        if (that == typeof(Guid)) return default(Guid);
         if (that.IsArray) return Array.CreateInstance(that, 0);
         var ctorParms = that.InternalGetTypeConstructor0OrFirst(false)?.GetParameters();
-        if (ctorParms == null || ctorParms.Any() == false) return Activator.CreateInstance(that, null);
-        return Activator.CreateInstance(that, ctorParms.Select(a => a.ParameterType.IsInterface || a.ParameterType.IsAbstract || a.ParameterType == typeof(string) ? null : Activator.CreateInstance(a.ParameterType, null)).ToArray());
+        if (ctorParms == null || ctorParms.Any() == false) return Activator.CreateInstance(that, true);
+        return Activator.CreateInstance(that, ctorParms
+            .Select(a => a.ParameterType.IsInterface || a.ParameterType.IsAbstract || a.ParameterType == typeof(string) || a.ParameterType.IsArray ?
+            null : 
+            Activator.CreateInstance(a.ParameterType, null)).ToArray());
     }
     internal static NewExpression InternalNewExpression(this Type that)
     {
@@ -214,7 +218,7 @@ public static partial class FreeSqlGlobalExtensions
     }
 
     /// <summary>
-    /// 将 IEnumable&lt;T&gt; 转成 ISelect&lt;T&gt;，以便使用 FreeSql 的查询功能。此方法用于 Lambad 表达式中，快速进行集合导航的查询。
+    /// 将 IEnumable&lt;T&gt; 转成 ISelect&lt;T&gt;，以便使用 FreeSql 的查询功能。此方法用于 Lambda 表达式中，快速进行集合导航的查询。
     /// </summary>
     /// <typeparam name="TEntity"></typeparam>
     /// <param name="that"></param>

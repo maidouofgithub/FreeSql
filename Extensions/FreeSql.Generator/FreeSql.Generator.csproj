@@ -6,13 +6,13 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <IsPackable>true</IsPackable>
     <PackAsTool>true</PackAsTool>
-    <Authors>2881099</Authors>
+    <Authors>ncc;YeXiangQin</Authors>
     <Company>2881099</Company>
     <Product>FreeSql</Product>
     <Description>使用 FreeSql 快速生成数据库的实体类，安装：dotnet tool install -g FreeSql.Generator</Description>
     <PackageProjectUrl>https://github.com/2881099/FreeSql</PackageProjectUrl>
     <RepositoryUrl>https://github.com/2881099/FreeSql</RepositoryUrl>
-    <Version>1.4.0-preview20200404</Version>
+    <Version>1.6.0-preview0611</Version>
     <PackageTags>FreeSql DbFirst 实体生成器</PackageTags>
   </PropertyGroup>
 
@@ -23,6 +23,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="DmProvider">
+      <HintPath>..\..\Providers\FreeSql.Provider.Dameng\lib\DmProvider\netstandard2.0\DmProvider.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Providers\FreeSql.Provider.Dameng\FreeSql.Provider.Dameng.csproj" />
     <ProjectReference Include="..\..\Providers\FreeSql.Provider.MySqlConnector\FreeSql.Provider.MySqlConnector.csproj" />
     <ProjectReference Include="..\..\Providers\FreeSql.Provider.Odbc\FreeSql.Provider.Odbc.csproj" />
     <ProjectReference Include="..\..\Providers\FreeSql.Provider.Oracle\FreeSql.Provider.Oracle.csproj" />

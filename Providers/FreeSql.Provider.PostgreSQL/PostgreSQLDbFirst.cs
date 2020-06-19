@@ -213,9 +213,11 @@ namespace FreeSql.PostgreSQL
         public List<DbTableInfo> GetTablesByDatabase(params string[] database)
         {
             var olddatabase = "";
+            var is96 = true;
             using (var conn = _orm.Ado.MasterPool.Get(TimeSpan.FromSeconds(5)))
             {
                 olddatabase = conn.Value.Database;
+                is96 = PgVersionIs96(conn.Value.ServerVersion);
             }
             var dbs = database == null || database.Any() == false ? new[] { olddatabase } : database;
             var tables = new List<DbTableInfo>();
@@ -338,6 +340,7 @@ where {loc8.ToString().Replace("a.table_name", "ns.nspname || '.' || c.relname")
                 ds = _orm.Ado.ExecuteArray(CommandType.Text, sql);
                 if (ds == null) return loc1;
 
+                var position = 0;
                 foreach (object[] row in ds)
                 {
                     var object_id = string.Concat(row[0]);
@@ -348,6 +351,7 @@ where {loc8.ToString().Replace("a.table_name", "ns.nspname || '.' || c.relname")
                     var is_nullable = string.Concat(row[5]) == "1";
                     var is_identity = string.Concat(row[6]).StartsWith(@"nextval('") && string.Concat(row[6]).EndsWith(@"'::regclass)");
                     var comment = string.Concat(row[7]);
+                    var defaultValue = string.Concat(row[6]);
                     int attndims = int.Parse(string.Concat(row[8]));
                     string typtype = string.Concat(row[9]);
                     string owner = string.Concat(row[10]);
@@ -383,7 +387,9 @@ where {loc8.ToString().Replace("a.table_name", "ns.nspname || '.' || c.relname")
                         DbTypeText = type,
                         DbTypeTextFull = sqlType,
                         Table = loc2[object_id],
-                        Coment = comment
+                        Coment = comment,
+                        DefaultValue = defaultValue,
+                        Position = ++position
                     });
                     loc3[object_id][column].DbType = this.GetDbType(loc3[object_id][column]);
                     loc3[object_id][column].CsType = this.GetCsTypeInfo(loc3[object_id][column]);
@@ -397,7 +403,7 @@ b.relname as index_id,
 case when a.indisunique then 1 else 0 end IsUnique,
 case when a.indisprimary then 1 else 0 end IsPrimary,
 case when a.indisclustered then 0 else 1 end IsClustered,
-case when pg_index_column_has_property(b.oid, c.attnum, 'desc') = 't' then 1 else 0 end IsDesc,
+{(is96 ? "case when pg_index_column_has_property(b.oid, c.attnum, 'desc') = 't' then 1 else 0 end" : "0")} IsDesc,
 a.indkey::text,
 c.attnum
 from pg_index a
@@ -586,6 +592,15 @@ where a.typtype = 'e' and ns.nspname in (SELECT ""schema_name"" FROM information
                 if (labels.ContainsKey(key) == false) labels.Add(key, dr.label);
             }
             return ret.Select(a => new DbEnumInfo { Name = a.Key, Labels = a.Value }).ToList();
+        }
+
+        public static bool PgVersionIs96(string serverVersion)
+        {
+            int[] version = serverVersion.Split('.').Select(a => int.TryParse(a, out var tryint) ? tryint : 0).ToArray();
+            if (version?.Any() != true) return true;
+            if (version[0] > 9) return true;
+            if (version[0] == 9 && version.Length > 1 && version[1] >= 6) return true;
+            return false;
         }
     }
 }

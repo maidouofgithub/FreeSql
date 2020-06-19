@@ -69,7 +69,10 @@ namespace FreeSql.Internal
             var propsLazy = new List<NaviteTuple<PropertyInfo, bool, bool, MethodInfo, MethodInfo>>();
             var propsNavObjs = new List<PropertyInfo>();
             var propsComment = CommonUtils.GetProperyCommentBySummary(entity);
+            var propsCommentByDescAttr = CommonUtils.GetPropertyCommentByDescriptionAttribute(entity);
             trytb.Comment = propsComment != null && propsComment.TryGetValue("", out var tbcomment) ? tbcomment : "";
+            if (string.IsNullOrEmpty(trytb.Comment) && propsCommentByDescAttr != null && propsCommentByDescAttr.TryGetValue("", out tbcomment)) trytb.Comment = tbcomment;
+
             var columnsList = new List<ColumnInfo>();
             foreach (var p in trytb.Properties.Values)
             {
@@ -148,6 +151,9 @@ namespace FreeSql.Internal
                 };
                 if (propsComment != null && propsComment.TryGetValue(p.Name, out var trycomment))
                     col.Comment = trycomment;
+                if (string.IsNullOrEmpty(col.Comment) && propsCommentByDescAttr != null && propsCommentByDescAttr.TryGetValue(p.Name, out trycomment))
+                    col.Comment = trycomment;
+
                 if (colattr.IsIgnore)
                 {
                     trytb.ColumnsByCsIgnore.Add(p.Name, col);
@@ -193,9 +199,25 @@ namespace FreeSql.Internal
                 //}
                 if (colattr.ServerTime != DateTimeKind.Unspecified && new[] { typeof(DateTime), typeof(DateTimeOffset) }.Contains(colattr.MapType.NullableTypeOrThis()))
                 {
-                    col.DbDefaultValue = colattr.ServerTime == DateTimeKind.Local ? common.Now : common.NowUtc;
-                    col.DbInsertValue = colattr.ServerTime == DateTimeKind.Local ? common.Now : common.NowUtc;
-                    col.DbUpdateValue = colattr.ServerTime == DateTimeKind.Local ? common.Now : common.NowUtc;
+                    var commonNow = common.Now;
+                    var commonNowUtc = common.NowUtc;
+                    switch (common._orm.Ado.DataType)
+                    {
+                        case DataType.MySql:
+                        case DataType.OdbcMySql: //处理毫秒
+                            var timeLength = 0;
+                            var mTimeLength = Regex.Match(colattr.DbType, @"(DATETIME|TIMESTAMP)\s*\((\d+)\)");
+                            if (mTimeLength.Success) timeLength = int.Parse(mTimeLength.Groups[2].Value);
+                            if (timeLength > 0 && timeLength < 7)
+                            {
+                                commonNow = $"{commonNow.TrimEnd('(', ')')}({timeLength})";
+                                commonNowUtc = $"{commonNowUtc.TrimEnd('(', ')')}({timeLength})";
+                            }
+                            break;
+                    }
+                    col.DbDefaultValue = colattr.ServerTime == DateTimeKind.Local ? commonNow : commonNowUtc;
+                    col.DbInsertValue = colattr.ServerTime == DateTimeKind.Local ? commonNow : commonNowUtc;
+                    col.DbUpdateValue = colattr.ServerTime == DateTimeKind.Local ? commonNow : commonNowUtc;
                 }
                 if (string.IsNullOrEmpty(colattr.InsertValueSql) == false)
                 {
@@ -210,7 +232,8 @@ namespace FreeSql.Internal
                     {
                         case DataType.MySql:
                         case DataType.OdbcMySql:
-                            if (strlen < 0) colattr.DbType = "TEXT";
+                            if (strlen == -2) colattr.DbType = "LONGTEXT";
+                            else if (strlen < 0) colattr.DbType = "TEXT";
                             else colattr.DbType = Regex.Replace(colattr.DbType, charPatten, $"$1({strlen})");
                             break;
                         case DataType.SqlServer:
@@ -220,6 +243,8 @@ namespace FreeSql.Internal
                             break;
                         case DataType.PostgreSQL:
                         case DataType.OdbcPostgreSQL:
+                        case DataType.OdbcKingbaseES:
+                        case DataType.ShenTong:
                             if (strlen < 0) colattr.DbType = "TEXT";
                             else colattr.DbType = Regex.Replace(colattr.DbType, charPatten, $"$1({strlen})");
                             break;
@@ -227,9 +252,13 @@ namespace FreeSql.Internal
                             if (strlen < 0) colattr.DbType = "NCLOB"; //v1.3.2+ https://github.com/dotnetcore/FreeSql/issues/259
                             else colattr.DbType = Regex.Replace(colattr.DbType, charPatten, $"$1({strlen})");
                             break;
+                        case DataType.Dameng:
+                            if (strlen < 0) colattr.DbType = "TEXT";
+                            else colattr.DbType = Regex.Replace(colattr.DbType, charPatten, $"$1({strlen})");
+                            break;
                         case DataType.OdbcOracle:
                         case DataType.OdbcDameng:
-                            if (strlen < 0) colattr.DbType = Regex.Replace(colattr.DbType, charPatten, $"$1(4000)");
+                            if (strlen < 0) colattr.DbType = Regex.Replace(colattr.DbType, charPatten, $"$1(4000)"); //ODBC 不支持 NCLOB
                             else colattr.DbType = Regex.Replace(colattr.DbType, charPatten, $"$1({strlen})");
                             break;
                         case DataType.Sqlite:
@@ -1235,7 +1264,13 @@ namespace FreeSql.Internal
             public static PropertyInfo PropertyValue = typeof(RowInfo).GetProperty("Value");
             public static PropertyInfo PropertyDataIndex = typeof(RowInfo).GetProperty("DataIndex");
         }
-        internal static MethodInfo MethodDataReaderGetValue = typeof(DbDataReader).GetMethod("GetValue");
+        internal static MethodInfo MethodDataReaderGetValue = typeof(Utils).GetMethod("InternalDataReaderGetValue", BindingFlags.Static | BindingFlags.NonPublic);
+        internal static PropertyInfo PropertyDataReaderFieldCount = typeof(DbDataReader).GetProperty("FieldCount");
+        internal static object InternalDataReaderGetValue(CommonUtils commonUtil, DbDataReader dr, int index)
+        {
+            if (commonUtil._orm.Ado.DataType == DataType.Dameng && dr.IsDBNull(index)) return null;
+            return dr.GetValue(index);
+        }
         internal static RowInfo ExecuteArrayRowReadClassOrTuple(string flagStr, Type typeOrg, int[] indexes, DbDataReader row, int dataIndex, CommonUtils _commonUtils)
         {
             if (string.IsNullOrEmpty(flagStr)) flagStr = "all";
@@ -1252,8 +1287,8 @@ namespace FreeSql.Internal
 
                     if (type.IsArray) return Expression.Lambda<Func<Type, int[], DbDataReader, int, CommonUtils, RowInfo>>(
                         Expression.New(RowInfo.Constructor,
-                            GetDataReaderValueBlockExpression(type, Expression.Call(rowExp, MethodDataReaderGetValue, dataIndexExp)),
-                            //Expression.Call(MethodGetDataReaderValue, new Expression[] { typeExp, Expression.Call(rowExp, MethodDataReaderGetValue, dataIndexExp) }),
+                            GetDataReaderValueBlockExpression(type, Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, dataIndexExp })),
+                            //Expression.Call(MethodGetDataReaderValue, new Expression[] { typeExp, Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, dataIndexExp }) }),
                             Expression.Add(dataIndexExp, Expression.Constant(1))
                         ), new[] { typeExp, indexesExp, rowExp, dataIndexExp, commonUtilExp }).Compile();
 
@@ -1263,8 +1298,8 @@ namespace FreeSql.Internal
                         dicExecuteArrayRowReadClassOrTuple.ContainsKey(typeGeneric))
                         return Expression.Lambda<Func<Type, int[], DbDataReader, int, CommonUtils, RowInfo>>(
                         Expression.New(RowInfo.Constructor,
-                            GetDataReaderValueBlockExpression(type, Expression.Call(rowExp, MethodDataReaderGetValue, dataIndexExp)),
-                            //Expression.Call(MethodGetDataReaderValue, new Expression[] { typeExp, Expression.Call(rowExp, MethodDataReaderGetValue, dataIndexExp) }),
+                            GetDataReaderValueBlockExpression(type, Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, dataIndexExp })),
+                            //Expression.Call(MethodGetDataReaderValue, new Expression[] { typeExp, Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, dataIndexExp }) }),
                             Expression.Add(dataIndexExp, Expression.Constant(1))
                         ), new[] { typeExp, indexesExp, rowExp, dataIndexExp, commonUtilExp }).Compile();
 
@@ -1284,8 +1319,8 @@ namespace FreeSql.Internal
                             {
                                 Expression read2ExpAssign = null; //加速缓存
                                 if (field.FieldType.IsArray) read2ExpAssign = Expression.New(RowInfo.Constructor,
-                                    GetDataReaderValueBlockExpression(field.FieldType, Expression.Call(rowExp, MethodDataReaderGetValue, dataIndexExp)),
-                                    //Expression.Call(MethodGetDataReaderValue, new Expression[] { Expression.Constant(field.FieldType), Expression.Call(rowExp, MethodDataReaderGetValue, dataIndexExp) }),
+                                    GetDataReaderValueBlockExpression(field.FieldType, Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, dataIndexExp })),
+                                    //Expression.Call(MethodGetDataReaderValue, new Expression[] { Expression.Constant(field.FieldType), Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, dataIndexExp }) }),
                                     Expression.Add(dataIndexExp, Expression.Constant(1))
                                 );
                                 else
@@ -1294,8 +1329,8 @@ namespace FreeSql.Internal
                                     if (fieldtypeGeneric.IsNullableType()) fieldtypeGeneric = fieldtypeGeneric.GetGenericArguments().First();
                                     if (fieldtypeGeneric.IsEnum ||
                                         dicExecuteArrayRowReadClassOrTuple.ContainsKey(fieldtypeGeneric)) read2ExpAssign = Expression.New(RowInfo.Constructor,
-                                            GetDataReaderValueBlockExpression(field.FieldType, Expression.Call(rowExp, MethodDataReaderGetValue, dataIndexExp)),
-                                            //Expression.Call(MethodGetDataReaderValue, new Expression[] { Expression.Constant(field.FieldType), Expression.Call(rowExp, MethodDataReaderGetValue, dataIndexExp) }),
+                                            GetDataReaderValueBlockExpression(field.FieldType, Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, dataIndexExp })),
+                                            //Expression.Call(MethodGetDataReaderValue, new Expression[] { Expression.Constant(field.FieldType), Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, dataIndexExp }) }),
                                             Expression.Add(dataIndexExp, Expression.Constant(1))
                                     );
                                     else
@@ -1304,41 +1339,41 @@ namespace FreeSql.Internal
                                     }
                                 }
                                 block2Exp.AddRange(new Expression[] {
-								//Expression.TryCatch(Expression.Block(
-								//	typeof(void),
-									Expression.Assign(read2Exp, read2ExpAssign),
-                                    Expression.IfThen(Expression.GreaterThan(read2ExpDataIndex, dataIndexExp),
-                                        Expression.Assign(dataIndexExp, read2ExpDataIndex)),
-                                    Expression.IfThenElse(Expression.Equal(read2ExpValue, Expression.Constant(null)),
-                                        Expression.Assign(Expression.MakeMemberAccess(ret2Exp, field), Expression.Default(field.FieldType)),
-                                        Expression.Assign(Expression.MakeMemberAccess(ret2Exp, field), Expression.Convert(read2ExpValue, field.FieldType)))
-								//), 
-								//Expression.Catch(typeof(Exception), Expression.Block(
-								//		Expression.IfThen(Expression.Equal(read2ExpDataIndex, Expression.Constant(0)), Expression.Throw(Expression.Constant(new Exception(field.Name + "," + 0)))),
-								//		Expression.IfThen(Expression.Equal(read2ExpDataIndex, Expression.Constant(1)), Expression.Throw(Expression.Constant(new Exception(field.Name + "," + 1)))),
-								//		Expression.IfThen(Expression.Equal(read2ExpDataIndex, Expression.Constant(2)), Expression.Throw(Expression.Constant(new Exception(field.Name + "," + 2)))),
-								//		Expression.IfThen(Expression.Equal(read2ExpDataIndex, Expression.Constant(3)), Expression.Throw(Expression.Constant(new Exception(field.Name + "," + 3)))),
-								//		Expression.IfThen(Expression.Equal(read2ExpDataIndex, Expression.Constant(4)), Expression.Throw(Expression.Constant(new Exception(field.Name + "," + 4))))
-								//	)
-								//))
-							});
+								    //Expression.TryCatch(Expression.Block(
+								    //	typeof(void),
+									    Expression.Assign(read2Exp, read2ExpAssign),
+                                        Expression.IfThen(Expression.GreaterThan(read2ExpDataIndex, dataIndexExp),
+                                            Expression.Assign(dataIndexExp, read2ExpDataIndex)),
+                                        Expression.IfThenElse(Expression.Equal(read2ExpValue, Expression.Constant(null)),
+                                            Expression.Assign(Expression.MakeMemberAccess(ret2Exp, field), Expression.Default(field.FieldType)),
+                                            Expression.Assign(Expression.MakeMemberAccess(ret2Exp, field), Expression.Convert(read2ExpValue, field.FieldType)))
+								    //), 
+								    //Expression.Catch(typeof(Exception), Expression.Block(
+								    //		Expression.IfThen(Expression.Equal(read2ExpDataIndex, Expression.Constant(0)), Expression.Throw(Expression.Constant(new Exception(field.Name + "," + 0)))),
+								    //		Expression.IfThen(Expression.Equal(read2ExpDataIndex, Expression.Constant(1)), Expression.Throw(Expression.Constant(new Exception(field.Name + "," + 1)))),
+								    //		Expression.IfThen(Expression.Equal(read2ExpDataIndex, Expression.Constant(2)), Expression.Throw(Expression.Constant(new Exception(field.Name + "," + 2)))),
+								    //		Expression.IfThen(Expression.Equal(read2ExpDataIndex, Expression.Constant(3)), Expression.Throw(Expression.Constant(new Exception(field.Name + "," + 3)))),
+								    //		Expression.IfThen(Expression.Equal(read2ExpDataIndex, Expression.Constant(4)), Expression.Throw(Expression.Constant(new Exception(field.Name + "," + 4))))
+								    //	)
+								    //))
+							    });
                             }
                             block2Exp.AddRange(new Expression[] {
-                            Expression.Return(returnTarget, Expression.New(RowInfo.Constructor, Expression.Convert(ret2Exp, typeof(object)), dataIndexExp)),
-                            Expression.Label(returnTarget, Expression.Default(typeof(RowInfo)))
-                        });
+                                Expression.Return(returnTarget, Expression.New(RowInfo.Constructor, Expression.Convert(ret2Exp, typeof(object)), dataIndexExp)),
+                                Expression.Label(returnTarget, Expression.Default(typeof(RowInfo)))
+                            });
                             return Expression.Lambda<Func<Type, int[], DbDataReader, int, CommonUtils, RowInfo>>(
                                 Expression.Block(new[] { ret2Exp, read2Exp }, block2Exp), new[] { typeExp, indexesExp, rowExp, dataIndexExp, commonUtilExp }).Compile();
                         }
-                        var rowLenExp = Expression.ArrayLength(rowExp);
+                        var rowLenExp = Expression.MakeMemberAccess(rowExp, PropertyDataReaderFieldCount);
                         return Expression.Lambda<Func<Type, int[], DbDataReader, int, CommonUtils, RowInfo>>(
                             Expression.Block(
                                 Expression.IfThen(
                                     Expression.LessThan(dataIndexExp, rowLenExp),
-                                        Expression.Return(returnTarget, Expression.New(RowInfo.Constructor,
-                                            GetDataReaderValueBlockExpression(type, Expression.Call(rowExp, MethodDataReaderGetValue, dataIndexExp)),
-                                            //Expression.Call(MethodGetDataReaderValue, new Expression[] { typeExp, Expression.Call(rowExp, MethodDataReaderGetValue, dataIndexExp) }),
-                                            Expression.Add(dataIndexExp, Expression.Constant(1))))
+                                    Expression.Return(returnTarget, Expression.New(RowInfo.Constructor,
+                                        GetDataReaderValueBlockExpression(type, Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, dataIndexExp })),
+                                        //Expression.Call(MethodGetDataReaderValue, new Expression[] { typeExp, Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, dataIndexExp }) }),
+                                        Expression.Add(dataIndexExp, Expression.Constant(1))))
                                 ),
                                 Expression.Label(returnTarget, Expression.Default(typeof(RowInfo)))
                             ), new[] { typeExp, indexesExp, rowExp, dataIndexExp, commonUtilExp }).Compile();
@@ -1391,7 +1426,7 @@ namespace FreeSql.Internal
                             var readType = typetb.ColumnsByCs.TryGetValue(ctorParm.Name, out var trycol) ? trycol.Attribute.MapType : ctorParm.ParameterType;
 
                             var ispkExp = new List<Expression>();
-                            Expression readVal = Expression.Assign(readpkvalExp, Expression.Call(rowExp, MethodDataReaderGetValue, dataIndexExp));
+                            Expression readVal = Expression.Assign(readpkvalExp, Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, dataIndexExp }));
                             Expression readExpAssign = null; //加速缓存
                             if (readType.IsArray) readExpAssign = Expression.New(RowInfo.Constructor,
                                 GetDataReaderValueBlockExpression(readType, readpkvalExp),
@@ -1407,14 +1442,14 @@ namespace FreeSql.Internal
                                 {
 
                                     //判断主键为空，则整个对象不读取
-                                    //blockExp.Add(Expression.Assign(readpkvalExp, Expression.Call(rowExp, MethodDataReaderGetValue, dataIndexExp)));
+                                    //blockExp.Add(Expression.Assign(readpkvalExp, Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, dataIndexExp })));
                                     if (trycol?.Attribute.IsPrimary == true)
                                     {
                                         ispkExp.Add(
                                             Expression.IfThen(
                                                 Expression.AndAlso(
                                                     Expression.IsFalse(readpknullExp),
-                                                    Expression.Or(
+                                                    Expression.OrElse(
                                                         Expression.Equal(readpkvalExp, Expression.Constant(DBNull.Value)),
                                                         Expression.Equal(readpkvalExp, Expression.Constant(null))
                                                     )
@@ -1498,7 +1533,7 @@ namespace FreeSql.Internal
 
                             var ispkExp = new List<Expression>();
                             var propGetSetMethod = prop.GetSetMethod(true);
-                            Expression readVal = Expression.Assign(readpkvalExp, Expression.Call(rowExp, MethodDataReaderGetValue, tryidxExp));
+                            Expression readVal = Expression.Assign(readpkvalExp, Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, tryidxExp }));
                             Expression readExpAssign = null; //加速缓存
                             if (readType.IsArray) readExpAssign = Expression.New(RowInfo.Constructor,
                                 GetDataReaderValueBlockExpression(readType, readpkvalExp),
@@ -1514,7 +1549,7 @@ namespace FreeSql.Internal
                                 {
 
                                     //判断主键为空，则整个对象不读取
-                                    //blockExp.Add(Expression.Assign(readpkvalExp, Expression.Call(rowExp, MethodDataReaderGetValue, dataIndexExp)));
+                                    //blockExp.Add(Expression.Assign(readpkvalExp, Expression.Call(MethodDataReaderGetValue, new Expression[] { commonUtilExp, rowExp, dataIndexExp })));
                                     if (flagStr.StartsWith("adoQuery") == false && //Ado.Query 的时候不作此判断
                                         trycol?.Attribute.IsPrimary == true) //若主键值为 null，则整行读取出来的对象为 null
                                     {
@@ -1522,7 +1557,7 @@ namespace FreeSql.Internal
                                             Expression.IfThen(
                                                 Expression.AndAlso(
                                                     Expression.IsFalse(readpknullExp),
-                                                    Expression.Or(
+                                                    Expression.OrElse(
                                                         Expression.Equal(readpkvalExp, Expression.Constant(DBNull.Value)),
                                                         Expression.Equal(readpkvalExp, Expression.Constant(null))
                                                     )
@@ -1651,16 +1686,16 @@ namespace FreeSql.Internal
         static MethodInfo MethodConvertChangeType = typeof(Convert).GetMethod("ChangeType", new[] { typeof(object), typeof(Type) });
         static MethodInfo MethodTimeSpanFromSeconds = typeof(TimeSpan).GetMethod("FromSeconds");
         static MethodInfo MethodSByteTryParse = typeof(sbyte).GetMethod("TryParse", new[] { typeof(string), typeof(sbyte).MakeByRefType() });
-        static MethodInfo MethodShortTryParse = typeof(short).GetMethod("TryParse", new[] { typeof(string), typeof(short).MakeByRefType() });
-        static MethodInfo MethodIntTryParse = typeof(int).GetMethod("TryParse", new[] { typeof(string), typeof(int).MakeByRefType() });
-        static MethodInfo MethodLongTryParse = typeof(long).GetMethod("TryParse", new[] { typeof(string), typeof(long).MakeByRefType() });
+        static MethodInfo MethodShortTryParse = typeof(short).GetMethod("TryParse", new[] { typeof(string), typeof(System.Globalization.NumberStyles), typeof(IFormatProvider), typeof(short).MakeByRefType() });
+        static MethodInfo MethodIntTryParse = typeof(int).GetMethod("TryParse", new[] { typeof(string), typeof(System.Globalization.NumberStyles), typeof(IFormatProvider), typeof(int).MakeByRefType() });
+        static MethodInfo MethodLongTryParse = typeof(long).GetMethod("TryParse", new[] { typeof(string), typeof(System.Globalization.NumberStyles), typeof(IFormatProvider), typeof(long).MakeByRefType() });
         static MethodInfo MethodByteTryParse = typeof(byte).GetMethod("TryParse", new[] { typeof(string), typeof(byte).MakeByRefType() });
-        static MethodInfo MethodUShortTryParse = typeof(ushort).GetMethod("TryParse", new[] { typeof(string), typeof(ushort).MakeByRefType() });
-        static MethodInfo MethodUIntTryParse = typeof(uint).GetMethod("TryParse", new[] { typeof(string), typeof(uint).MakeByRefType() });
-        static MethodInfo MethodULongTryParse = typeof(ulong).GetMethod("TryParse", new[] { typeof(string), typeof(ulong).MakeByRefType() });
-        static MethodInfo MethodDoubleTryParse = typeof(double).GetMethod("TryParse", new[] { typeof(string), typeof(double).MakeByRefType() });
-        static MethodInfo MethodFloatTryParse = typeof(float).GetMethod("TryParse", new[] { typeof(string), typeof(float).MakeByRefType() });
-        static MethodInfo MethodDecimalTryParse = typeof(decimal).GetMethod("TryParse", new[] { typeof(string), typeof(decimal).MakeByRefType() });
+        static MethodInfo MethodUShortTryParse = typeof(ushort).GetMethod("TryParse", new[] { typeof(string), typeof(System.Globalization.NumberStyles), typeof(IFormatProvider), typeof(ushort).MakeByRefType() });
+        static MethodInfo MethodUIntTryParse = typeof(uint).GetMethod("TryParse", new[] { typeof(string), typeof(System.Globalization.NumberStyles), typeof(IFormatProvider), typeof(uint).MakeByRefType() });
+        static MethodInfo MethodULongTryParse = typeof(ulong).GetMethod("TryParse", new[] { typeof(string), typeof(System.Globalization.NumberStyles), typeof(IFormatProvider), typeof(ulong).MakeByRefType() });
+        static MethodInfo MethodDoubleTryParse = typeof(double).GetMethod("TryParse", new[] { typeof(string), typeof(System.Globalization.NumberStyles), typeof(IFormatProvider), typeof(double).MakeByRefType() });
+        static MethodInfo MethodFloatTryParse = typeof(float).GetMethod("TryParse", new[] { typeof(string), typeof(System.Globalization.NumberStyles), typeof(IFormatProvider), typeof(float).MakeByRefType() });
+        static MethodInfo MethodDecimalTryParse = typeof(decimal).GetMethod("TryParse", new[] { typeof(string), typeof(System.Globalization.NumberStyles), typeof(IFormatProvider), typeof(decimal).MakeByRefType() });
         static MethodInfo MethodTimeSpanTryParse = typeof(TimeSpan).GetMethod("TryParse", new[] { typeof(string), typeof(TimeSpan).MakeByRefType() });
         static MethodInfo MethodDateTimeTryParse = typeof(DateTime).GetMethod("TryParse", new[] { typeof(string), typeof(DateTime).MakeByRefType() });
         static MethodInfo MethodDateTimeOffsetTryParse = typeof(DateTimeOffset).GetMethod("TryParse", new[] { typeof(string), typeof(DateTimeOffset).MakeByRefType() });
@@ -1690,7 +1725,7 @@ namespace FreeSql.Internal
                         Expression.TypeEqual(valueExp, typeof(string)),
                         Expression.Return(returnTarget, Expression.Call(Expression.Constant(DefaultEncoding), MethodEncodingGetBytes, Expression.Convert(valueExp, typeof(string)))),
                         Expression.IfThenElse(
-                            Expression.Or(Expression.TypeEqual(valueExp, typeof(Guid)), Expression.TypeEqual(valueExp, typeof(Guid?))),
+                            Expression.OrElse(Expression.TypeEqual(valueExp, typeof(Guid)), Expression.TypeEqual(valueExp, typeof(Guid?))),
                             Expression.Return(returnTarget, Expression.Call(MethodGuidToBytes, Expression.Convert(valueExp, typeof(Guid)))),
                             Expression.Return(returnTarget, Expression.Call(Expression.Constant(DefaultEncoding), MethodEncodingGetBytes, Expression.Call(MethodToString, valueExp)))
                         )
@@ -1773,7 +1808,7 @@ namespace FreeSql.Internal
                                new Expression[] {
                                     Expression.Assign(valueStrExp, Expression.Call(MethodToString, valueExp)),
                                     Expression.IfThenElse(
-                                        Expression.IsTrue(Expression.Call(MethodDoubleTryParse, valueStrExp, tryparseVarExp)),
+                                        Expression.IsTrue(Expression.Call(MethodDoubleTryParse, valueStrExp, Expression.Constant(System.Globalization.NumberStyles.Any), Expression.Constant(null, typeof(IFormatProvider)), tryparseVarExp)),
                                         Expression.Return(returnTarget, Expression.Convert(Expression.Call(MethodTimeSpanFromSeconds, tryparseVarExp), typeof(object))),
                                         Expression.IfThenElse(
                                             Expression.IsTrue(Expression.Call(MethodTimeSpanTryParse, valueStrExp, tryparseVarTsExp)),
@@ -1800,7 +1835,7 @@ namespace FreeSql.Internal
                               new[] { tryparseVarExp = Expression.Variable(typeof(short)) },
                                new Expression[] {
                                 Expression.IfThenElse(
-                                    Expression.IsTrue(Expression.Call(MethodShortTryParse, Expression.Convert(valueExp, typeof(string)), tryparseVarExp)),
+                                    Expression.IsTrue(Expression.Call(MethodShortTryParse, Expression.Convert(valueExp, typeof(string)), Expression.Constant(System.Globalization.NumberStyles.Any), Expression.Constant(null, typeof(IFormatProvider)), tryparseVarExp)),
                                     Expression.Return(returnTarget, Expression.Convert(tryparseVarExp, typeof(object))),
                                     Expression.Return(returnTarget, Expression.Convert(Expression.Default(typeOrg), typeof(object)))
                                 )
@@ -1812,7 +1847,7 @@ namespace FreeSql.Internal
                               new[] { tryparseVarExp = Expression.Variable(typeof(int)) },
                                new Expression[] {
                                 Expression.IfThenElse(
-                                    Expression.IsTrue(Expression.Call(MethodIntTryParse, Expression.Convert(valueExp, typeof(string)), tryparseVarExp)),
+                                    Expression.IsTrue(Expression.Call(MethodIntTryParse, Expression.Convert(valueExp, typeof(string)), Expression.Constant(System.Globalization.NumberStyles.Any), Expression.Constant(null, typeof(IFormatProvider)), tryparseVarExp)),
                                     Expression.Return(returnTarget, Expression.Convert(tryparseVarExp, typeof(object))),
                                     Expression.Return(returnTarget, Expression.Convert(Expression.Default(typeOrg), typeof(object)))
                                 )
@@ -1824,7 +1859,7 @@ namespace FreeSql.Internal
                               new[] { tryparseVarExp = Expression.Variable(typeof(long)) },
                                new Expression[] {
                                 Expression.IfThenElse(
-                                    Expression.IsTrue(Expression.Call(MethodLongTryParse, Expression.Convert(valueExp, typeof(string)), tryparseVarExp)),
+                                    Expression.IsTrue(Expression.Call(MethodLongTryParse, Expression.Convert(valueExp, typeof(string)), Expression.Constant(System.Globalization.NumberStyles.Any), Expression.Constant(null, typeof(IFormatProvider)), tryparseVarExp)),
                                     Expression.Return(returnTarget, Expression.Convert(tryparseVarExp, typeof(object))),
                                     Expression.Return(returnTarget, Expression.Convert(Expression.Default(typeOrg), typeof(object)))
                                 )
@@ -1848,7 +1883,7 @@ namespace FreeSql.Internal
                                new[] { tryparseVarExp = Expression.Variable(typeof(ushort)) },
                                new Expression[] {
                                 Expression.IfThenElse(
-                                    Expression.IsTrue(Expression.Call(MethodUShortTryParse, Expression.Convert(valueExp, typeof(string)), tryparseVarExp)),
+                                    Expression.IsTrue(Expression.Call(MethodUShortTryParse, Expression.Convert(valueExp, typeof(string)), Expression.Constant(System.Globalization.NumberStyles.Any), Expression.Constant(null, typeof(IFormatProvider)), tryparseVarExp)),
                                     Expression.Return(returnTarget, Expression.Convert(tryparseVarExp, typeof(object))),
                                     Expression.Return(returnTarget, Expression.Convert(Expression.Default(typeOrg), typeof(object)))
                                 )
@@ -1860,7 +1895,7 @@ namespace FreeSql.Internal
                                new[] { tryparseVarExp = Expression.Variable(typeof(uint)) },
                                new Expression[] {
                                 Expression.IfThenElse(
-                                    Expression.IsTrue(Expression.Call(MethodUIntTryParse, Expression.Convert(valueExp, typeof(string)), tryparseVarExp)),
+                                    Expression.IsTrue(Expression.Call(MethodUIntTryParse, Expression.Convert(valueExp, typeof(string)), Expression.Constant(System.Globalization.NumberStyles.Any), Expression.Constant(null, typeof(IFormatProvider)), tryparseVarExp)),
                                     Expression.Return(returnTarget, Expression.Convert(tryparseVarExp, typeof(object))),
                                     Expression.Return(returnTarget, Expression.Convert(Expression.Default(typeOrg), typeof(object)))
                                 )
@@ -1872,7 +1907,7 @@ namespace FreeSql.Internal
                               new[] { tryparseVarExp = Expression.Variable(typeof(ulong)) },
                                new Expression[] {
                                 Expression.IfThenElse(
-                                    Expression.IsTrue(Expression.Call(MethodULongTryParse, Expression.Convert(valueExp, typeof(string)), tryparseVarExp)),
+                                    Expression.IsTrue(Expression.Call(MethodULongTryParse, Expression.Convert(valueExp, typeof(string)), Expression.Constant(System.Globalization.NumberStyles.Any), Expression.Constant(null, typeof(IFormatProvider)), tryparseVarExp)),
                                     Expression.Return(returnTarget, Expression.Convert(tryparseVarExp, typeof(object))),
                                     Expression.Return(returnTarget, Expression.Convert(Expression.Default(typeOrg), typeof(object)))
                                 )
@@ -1884,7 +1919,7 @@ namespace FreeSql.Internal
                               new[] { tryparseVarExp = Expression.Variable(typeof(float)) },
                                new Expression[] {
                                 Expression.IfThenElse(
-                                    Expression.IsTrue(Expression.Call(MethodFloatTryParse, Expression.Convert(valueExp, typeof(string)), tryparseVarExp)),
+                                    Expression.IsTrue(Expression.Call(MethodFloatTryParse, Expression.Convert(valueExp, typeof(string)), Expression.Constant(System.Globalization.NumberStyles.Any), Expression.Constant(null, typeof(IFormatProvider)), tryparseVarExp)),
                                     Expression.Return(returnTarget, Expression.Convert(tryparseVarExp, typeof(object))),
                                     Expression.Return(returnTarget, Expression.Convert(Expression.Default(typeOrg), typeof(object)))
                                 )
@@ -1896,7 +1931,7 @@ namespace FreeSql.Internal
                                new[] { tryparseVarExp = Expression.Variable(typeof(double)) },
                                new Expression[] {
                                 Expression.IfThenElse(
-                                    Expression.IsTrue(Expression.Call(MethodDoubleTryParse, Expression.Convert(valueExp, typeof(string)), tryparseVarExp)),
+                                    Expression.IsTrue(Expression.Call(MethodDoubleTryParse, Expression.Convert(valueExp, typeof(string)), Expression.Constant(System.Globalization.NumberStyles.Any), Expression.Constant(null, typeof(IFormatProvider)), tryparseVarExp)),
                                     Expression.Return(returnTarget, Expression.Convert(tryparseVarExp, typeof(object))),
                                     Expression.Return(returnTarget, Expression.Convert(Expression.Default(typeOrg), typeof(object)))
                                 )
@@ -1908,7 +1943,7 @@ namespace FreeSql.Internal
                               new[] { tryparseVarExp = Expression.Variable(typeof(decimal)) },
                                new Expression[] {
                                 Expression.IfThenElse(
-                                    Expression.IsTrue(Expression.Call(MethodDecimalTryParse, Expression.Convert(valueExp, typeof(string)), tryparseVarExp)),
+                                    Expression.IsTrue(Expression.Call(MethodDecimalTryParse, Expression.Convert(valueExp, typeof(string)), Expression.Constant(System.Globalization.NumberStyles.Any), Expression.Constant(null, typeof(IFormatProvider)), tryparseVarExp)),
                                     Expression.Return(returnTarget, Expression.Convert(tryparseVarExp, typeof(object))),
                                     Expression.Return(returnTarget, Expression.Convert(Expression.Default(typeOrg), typeof(object)))
                                 )
@@ -1941,11 +1976,11 @@ namespace FreeSql.Internal
                         break;
                     case "System.Boolean":
                         tryparseBooleanExp = Expression.Return(returnTarget,
-                                Expression.Convert(
-                                    Expression.Not(
-                                        Expression.Or(
-                                            Expression.Equal(Expression.Convert(valueExp, typeof(string)), Expression.Constant("False")),
-                                        Expression.Or(
+                            Expression.Convert(
+                                Expression.Not(
+                                    Expression.OrElse(
+                                        Expression.Equal(Expression.Convert(valueExp, typeof(string)), Expression.Constant("False")),
+                                        Expression.OrElse(
                                             Expression.Equal(Expression.Convert(valueExp, typeof(string)), Expression.Constant("false")),
                                             Expression.Equal(Expression.Convert(valueExp, typeof(string)), Expression.Constant("0"))))),
                             typeof(object))
@@ -1999,7 +2034,7 @@ namespace FreeSql.Internal
                                 Expression.IfThenElse(
                                     Expression.TypeEqual(valueExp, typeof(byte[])),
                                     Expression.IfThenElse(
-                                        Expression.Or(Expression.Equal(Expression.Constant(type), Expression.Constant(typeof(Guid))), Expression.Equal(Expression.Constant(type), Expression.Constant(typeof(Guid?)))),
+                                        Expression.OrElse(Expression.Equal(Expression.Constant(type), Expression.Constant(typeof(Guid))), Expression.Equal(Expression.Constant(type), Expression.Constant(typeof(Guid?)))),
                                         Expression.Return(returnTarget, Expression.Convert(Expression.Call(MethodBytesToGuid, Expression.Convert(valueExp, typeof(byte[]))), typeof(object))),
                                         Expression.IfThenElse(
                                             Expression.Equal(Expression.Constant(type), Expression.Constant(typeof(string))),
@@ -2019,7 +2054,7 @@ namespace FreeSql.Internal
                 new[] { valueExp },
                 Expression.Assign(valueExp, Expression.Convert(value, typeof(object))),
                 Expression.IfThenElse(
-                    Expression.Or(
+                    Expression.OrElse(
                         Expression.Equal(valueExp, Expression.Constant(null)),
                         Expression.Equal(valueExp, Expression.Constant(DBNull.Value))
                     ),

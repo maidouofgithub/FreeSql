@@ -4,12 +4,6 @@
         <name>FreeSql.DbContext</name>
     </assembly>
     <members>
-        <member name="P:FreeSql.DbContext.Orm">
-            <summary>
-            注意：IFreeSql 属于顶级对象，事务无法自动传递。<para></para>
-            手工传递事务：ISelect/IInsert/IDelete/IUpdate 可以使用 WithTransaction(uow.GetOrBeginTransaction())
-            </summary>
-        </member>
         <member name="M:FreeSql.DbContext.Add``1(``0)">
             <summary>
             添加
@@ -73,6 +67,11 @@
             实体变化事件
             </summary>
         </member>
+        <member name="M:FreeSql.DbContext.FlushCommand">
+            <summary>
+            刷新队列中的命令
+            </summary>
+        </member>
         <member name="P:FreeSql.DbContextOptions.EnableAddOrUpdateNavigateList">
             <summary>
             是否开启一对多，多对多级联保存功能<para></para>
@@ -90,6 +89,11 @@
         <member name="P:FreeSql.DbContextOptions.NoneParameter">
             <summary>
             使用无参数化设置（对应 IInsert/IUpdate）
+            </summary>
+        </member>
+        <member name="P:FreeSql.DbContextOptions.EnableGlobalFilter">
+            <summary>
+            是否开启 IFreeSql GlobalFilter 功能（默认：true）
             </summary>
         </member>
         <member name="P:FreeSql.DbContextOptions.OnEntityChange">
@@ -170,6 +174,38 @@
             </summary>
             <param name="data"></param>
         </member>
+        <member name="M:FreeSql.Extensions.EfCoreFluentApi.EfCoreColumnFluent.Help">
+            <summary>
+            使用 FreeSql FluentApi 方法，当 EFCore FluentApi 方法无法表示的时候使用
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSql.Extensions.EfCoreFluentApi.EfCoreTableFluent.Help">
+            <summary>
+            使用 FreeSql FluentApi 方法，当 EFCore FluentApi 方法无法表示的时候使用
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSql.Extensions.EfCoreFluentApi.EfCoreTableFluent.HasData(System.Collections.Generic.IEnumerable{System.Object})">
+            <summary>
+            使用 Repository + EnableAddOrUpdateNavigateList + NoneParameter 方式插入种子数据
+            </summary>
+            <param name="data"></param>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSql.Extensions.EfCoreFluentApi.EfCoreTableFluent`1.Help">
+            <summary>
+            使用 FreeSql FluentApi 方法，当 EFCore FluentApi 方法无法表示的时候使用
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSql.Extensions.EfCoreFluentApi.EfCoreTableFluent`1.HasData(System.Collections.Generic.IEnumerable{`0})">
+            <summary>
+            使用 Repository + EnableAddOrUpdateNavigateList + NoneParameter 方式插入种子数据
+            </summary>
+            <param name="data"></param>
+            <returns></returns>
+        </member>
         <member name="M:FreeSql.IRepositoryUnitOfWork.GetRepository``2(System.Linq.Expressions.Expression{System.Func{``0,System.Boolean}})">
             <summary>
             在工作单元内创建默认仓库类，工作单元下的仓储操作具有事务特点
@@ -222,21 +258,6 @@
             </summary>
             <returns></returns>
         </member>
-        <member name="M:FreeSql.FreeSqlRepositoryDependencyInjection.AddFreeRepository(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{FreeSql.FluentDataFilter},System.Reflection.Assembly[])">
-            <summary>
-            批量注入 Repository，可以参考代码自行调整
-            </summary>
-            <param name="services"></param>
-            <param name="globalDataFilter"></param>
-            <param name="assemblies"></param>
-            <returns></returns>
-        </member>
-        <member name="P:FreeSql.IBaseRepository.Orm">
-            <summary>
-            注意：IFreeSql 属于顶级对象，事务无法自动传递。<para></para>
-            手工传递事务：ISelect/IInsert/IDelete/IUpdate 可以使用 WithTransaction(uow.GetOrBeginTransaction())
-            </summary>
-        </member>
         <member name="M:FreeSql.IBaseRepository.AsType(System.Type)">
             <summary>
             动态Type，在使用 Repository&lt;object&gt; 后使用本方法，指定实体类型
@@ -283,6 +304,11 @@
             <param name="entity">实体对象</param>
             <param name="propertyName">属性名</param>
         </member>
+        <member name="T:FreeSql.IUnitOfWork">
+            <summary>
+            工作单元
+            </summary>
+        </member>
         <member name="M:FreeSql.IUnitOfWork.GetOrBeginTransaction(System.Boolean)">
             <summary>
             开启事务，或者返回已开启的事务
@@ -310,7 +336,7 @@
         </member>
         <member name="P:FreeSql.IUnitOfWork.EntityChangeReport">
             <summary>
-            此工作单元内的实体变化跟踪
+            工作单元内的实体变化跟踪
             </summary>
         </member>
         <member name="P:FreeSql.UnitOfWork.DebugBeingUsed">
@@ -324,6 +350,83 @@
             格式：yyyyMMdd_HHmmss_种子id<para></para>
             例如：20191121_214504_1
             </summary>
+        </member>
+        <member name="T:FreeSql.UnitOfWorkManager">
+            <summary>
+            工作单元管理器
+            </summary>
+        </member>
+        <member name="P:FreeSql.UnitOfWorkManager.Current">
+            <summary>
+            当前的工作单元
+            </summary>
+        </member>
+        <member name="M:FreeSql.UnitOfWorkManager.Binding(FreeSql.IBaseRepository)">
+            <summary>
+            将仓储的事务交给我管理
+            </summary>
+            <param name="repository"></param>
+        </member>
+        <member name="M:FreeSql.UnitOfWorkManager.Begin(FreeSql.Propagation,System.Nullable{System.Data.IsolationLevel})">
+            <summary>
+            创建工作单元
+            </summary>
+            <param name="propagation">事务传播方式</param>
+            <param name="isolationLevel">事务隔离级别</param>
+            <returns></returns>
+        </member>
+        <member name="T:FreeSql.Propagation">
+            <summary>
+            事务传播方式
+            </summary>
+        </member>
+        <member name="F:FreeSql.Propagation.Requierd">
+            <summary>
+            如果当前没有事务，就新建一个事务，如果已存在一个事务中，加入到这个事务中，默认的选择。
+            </summary>
+        </member>
+        <member name="F:FreeSql.Propagation.Supports">
+            <summary>
+            支持当前事务，如果没有当前事务，就以非事务方法执行。
+            </summary>
+        </member>
+        <member name="F:FreeSql.Propagation.Mandatory">
+            <summary>
+            使用当前事务，如果没有当前事务，就抛出异常。
+            </summary>
+        </member>
+        <member name="F:FreeSql.Propagation.NotSupported">
+            <summary>
+            以非事务方式执行操作，如果当前存在事务，就把当前事务挂起。
+            </summary>
+        </member>
+        <member name="F:FreeSql.Propagation.Never">
+            <summary>
+            以非事务方式执行操作，如果当前事务存在则抛出异常。
+            </summary>
+        </member>
+        <member name="F:FreeSql.Propagation.Nested">
+            <summary>
+            以嵌套事务方式执行。
+            </summary>
+        </member>
+        <member name="M:FreeSqlDbContextExtensions.Entity``1(FreeSql.ICodeFirst,System.Action{FreeSql.Extensions.EfCoreFluentApi.EfCoreTableFluent{``0}})">
+            <summary>
+            EFCore 95% 相似的 FluentApi 扩展方法
+            </summary>
+            <typeparam name="T"></typeparam>
+            <param name="codeFirst"></param>
+            <param name="modelBuilder"></param>
+            <returns></returns>
+        </member>
+        <member name="M:FreeSqlDbContextExtensions.Entity(FreeSql.ICodeFirst,System.Type,System.Action{FreeSql.Extensions.EfCoreFluentApi.EfCoreTableFluent})">
+            <summary>
+            EFCore 95% 相似的 FluentApi 扩展方法
+            </summary>
+            <param name="codeFirst"></param>
+            <param name="entityType">实体类型</param>
+            <param name="modelBuilder"></param>
+            <returns></returns>
         </member>
         <member name="M:FreeSqlDbContextExtensions.CreateDbContext(IFreeSql)">
             <summary>
@@ -347,7 +450,7 @@
             <param name="that"></param>
             <param name="options"></param>
         </member>
-        <member name="M:FreeSqlRepositoryExtensions.GetRepository``2(IFreeSql,System.Linq.Expressions.Expression{System.Func{``0,System.Boolean}})">
+        <member name="M:FreeSqlDbContextExtensions.GetRepository``2(IFreeSql,System.Linq.Expressions.Expression{System.Func{``0,System.Boolean}})">
             <summary>
             返回默认仓库类
             </summary>
@@ -357,7 +460,7 @@
             <param name="filter">数据过滤 + 验证</param>
             <returns></returns>
         </member>
-        <member name="M:FreeSqlRepositoryExtensions.GetRepository``1(IFreeSql,System.Linq.Expressions.Expression{System.Func{``0,System.Boolean}})">
+        <member name="M:FreeSqlDbContextExtensions.GetRepository``1(IFreeSql,System.Linq.Expressions.Expression{System.Func{``0,System.Boolean}})">
             <summary>
             返回默认仓库类，适用联合主键的仓储类
             </summary>
@@ -366,7 +469,7 @@
             <param name="filter">数据过滤 + 验证</param>
             <returns></returns>
         </member>
-        <member name="M:FreeSqlRepositoryExtensions.GetGuidRepository``1(IFreeSql,System.Linq.Expressions.Expression{System.Func{``0,System.Boolean}},System.Func{System.String,System.String})">
+        <member name="M:FreeSqlDbContextExtensions.GetGuidRepository``1(IFreeSql,System.Linq.Expressions.Expression{System.Func{``0,System.Boolean}},System.Func{System.String,System.String})">
             <summary>
             返回仓库类
             </summary>
@@ -376,11 +479,20 @@
             <param name="asTable">分表规则，参数：旧表名；返回：新表名 https://github.com/2881099/FreeSql/wiki/Repository</param>
             <returns></returns>
         </member>
-        <member name="M:FreeSqlRepositoryExtensions.CreateUnitOfWork(IFreeSql)">
+        <member name="M:FreeSqlDbContextExtensions.CreateUnitOfWork(IFreeSql)">
             <summary>
             创建基于仓储功能的工作单元，务必使用 using 包含使用
             </summary>
             <param name="that"></param>
+            <returns></returns>
+        </member>
+        <member name="M:Microsoft.Extensions.DependencyInjection.FreeSqlRepositoryDependencyInjection.AddFreeRepository(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{FreeSql.FluentDataFilter},System.Reflection.Assembly[])">
+            <summary>
+            批量注入 Repository，可以参考代码自行调整
+            </summary>
+            <param name="services"></param>
+            <param name="globalDataFilter"></param>
+            <param name="assemblies"></param>
             <returns></returns>
         </member>
     </members>

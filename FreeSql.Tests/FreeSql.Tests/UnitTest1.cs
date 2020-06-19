@@ -438,6 +438,17 @@ namespace FreeSql.Tests
         [Fact]
         public void Test1()
         {
+            var testemoji = new TestGuidId { xxx = "💐🌸💮🌹🌺🌻🌼🌷🌱🌿🍀" };
+            Assert.Equal(1, g.sqlserver.Insert(testemoji).ExecuteAffrows());
+            var emoji = g.sqlserver.Select<TestGuidId>().Where(a => a.Id == testemoji.Id).First();
+            Assert.Equal("💐🌸💮🌹🌺🌻🌼🌷🌱🌿🍀", emoji.xxx);
+
+            Assert.Equal(1, g.sqlserver.Delete<TestGuidId>(testemoji).ExecuteAffrows());
+            testemoji = new TestGuidId { xxx = "💐🌸💮🌹🌺🌻🌼🌷🌱🌿🍀" };
+            Assert.Equal(1, g.sqlserver.Insert<TestGuidId>().NoneParameter().AppendData(testemoji).ExecuteAffrows());
+            emoji = g.sqlserver.Select<TestGuidId>().Where(a => a.Id == testemoji.Id).First();
+            Assert.Equal("💐🌸💮🌹🌺🌻🌼🌷🌱🌿🍀", emoji.xxx);
+
             var _model = new TestUpdateModel { 
                 F_EmpId = "xx11", 
                 F_RoleType = TestUpdateModelEnum.x2, 
@@ -674,6 +685,12 @@ namespace FreeSql.Tests
                     all = a,
                     subquery = g.sqlite.Select<ZX.Model.CustomerCheckupGroup>().Where(b => b.Id == a.Id).First(b => b.Group)
                 });
+
+            var sklgjlskdg12 = g.sqlite.Select<ZX.Model.CustomerMember>()
+                .Where(a => g.sqlite.Select<ZX.Model.CustomerCheckupGroup>().Any(b => b.MemberId == a.MemberId))
+                .ToUpdate()
+                .Set(a => a.Phone, "123123")
+                .ToSql();
 
             var sklgjlskdg = g.sqlite.Select<ZX.Model.CustomerMember>()
                 .Where(a => a.CheckupGroups.AsSelect().Any())
@@ -961,6 +978,29 @@ namespace FreeSql.Tests
                     sum = b.Sum(b.Key.yyyy),
                     sum2 = b.Sum(b.Value.TypeGuid)
                 });
+
+            var aggtolist21 = select
+                .GroupBy(a => new { a.Title, yyyy = string.Concat(a.CreateTime.Year, '-', a.CreateTime.Month) })
+                .ToDictionary(b => new
+                {
+                    b.Key.Title,
+                    b.Key.yyyy,
+
+                    cou = b.Count(),
+                    sum = b.Sum(b.Key.yyyy),
+                    sum2 = b.Sum(b.Value.TypeGuid)
+                }); 
+            var aggtolist22 = select
+                 .GroupBy(a => new { a.Title, yyyy = string.Concat(a.CreateTime.Year, '-', a.CreateTime.Month) })
+                 .ToDictionaryAsync(b => new
+                 {
+                     b.Key.Title,
+                     b.Key.yyyy,
+
+                     cou = b.Count(),
+                     sum = b.Sum(b.Key.yyyy),
+                     sum2 = b.Sum(b.Value.TypeGuid)
+                 }).Result;
 
             var aggsql3 = select
                 .GroupBy(a => a.Title)

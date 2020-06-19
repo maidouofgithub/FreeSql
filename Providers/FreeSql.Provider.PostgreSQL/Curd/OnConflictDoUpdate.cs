@@ -1,14 +1,11 @@
 ﻿using FreeSql.Aop;
-using FreeSql.Internal;
 using FreeSql.Internal.Model;
 using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Data.Common;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace FreeSql.PostgreSQL.Curd

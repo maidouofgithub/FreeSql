@@ -279,21 +279,43 @@ namespace FreeSql.Tests
             kwrepo.Insert(u1);
 
 
-            g.sqlite.GlobalFilter.Apply<gf_t1>("gft1", a => a.rowstate > -1)
+            g.sqlite.GlobalFilter.Apply<gf_t1>("gft1", a => a.rowstate > -1 && g.sqlite.Select<gf_t2>().Any(b => b.id == a.id))
                 .Apply<gf_t2>("gft2", a => a.rowstate > -2)
-                .Apply<gf_t3>("gft3", a => a.rowstate > -3);
+                .Apply<gf_t3>("gft3", a => a.rowstate > -3)
+                .Apply<gf_t1>("gft11", a => a.rowstate > -1);
 
             var tksk1 = g.sqlite.Select<gf_t1, gf_t2, gf_t3>()
                 .InnerJoin((a, b, c) => a.id == b.id)
                 .Where((a, b, c) => c.rowstate > 10)
                 .ToList();
+            g.sqlite.Update<gf_t1>().NoneParameter().Set(a => a.rowstate + 1).Where(a => a.rowstate >= 0).ExecuteAffrows();
 
             var tksk2 = g.sqlite.Select<gf_t1, gf_t2, gf_t3>()
                 .InnerJoin((a, b, c) => a.id == b.id)
                 .Where((a, b, c) => c.rowstate > 10)
                 .ToList();
+            g.sqlite.Update<gf_t1>().NoneParameter().Set(a => a.rowstate + 1).Where(a => a.rowstate >= 0).ExecuteAffrows();
 
             var dtot2 = g.sqlite.Select<gf_t1>().ToList(a => new gfDto
+            {
+                dto2 = new dfDto2
+                {
+                    rowstate = a.rowstate
+                }
+            });
+
+            var repo_dtot22 = g.sqlite.GetRepository<gf_t1>();
+
+            var dtot221 = repo_dtot22.Select.ToList(a => new gfDto
+            {
+                dto2 = new dfDto2
+                {
+                    rowstate = a.rowstate
+                }
+            });
+
+            repo_dtot22.DbContextOptions.EnableGlobalFilter = false;
+            var dtot222 = repo_dtot22.Select.ToList(a => new gfDto
             {
                 dto2 = new dfDto2
                 {

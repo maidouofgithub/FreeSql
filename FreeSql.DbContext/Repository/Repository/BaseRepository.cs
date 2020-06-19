@@ -13,7 +13,7 @@ namespace FreeSql
     {
 
         internal RepositoryDbContext _dbPriv; //这个不能私有化，有地方需要反射获取它
-        internal RepositoryDbContext _db => _dbPriv ?? (_dbPriv = new RepositoryDbContext(Orm, this));
+        internal RepositoryDbContext _db => _dbPriv ?? (_dbPriv = new RepositoryDbContext(OrmOriginal, this));
         internal RepositoryDbSet<TEntity> _dbsetPriv;
         internal RepositoryDbSet<TEntity> _dbset => _dbsetPriv ?? (_dbsetPriv = _db.Set<TEntity>() as RepositoryDbSet<TEntity>);
 
@@ -25,7 +25,7 @@ namespace FreeSql
 
         protected BaseRepository(IFreeSql fsql, Expression<Func<TEntity, bool>> filter, Func<string, string> asTable = null)
         {
-            Orm = fsql;
+            _ormScoped = DbContextScopedFreeSql.Create(fsql, () => _db, () => UnitOfWork);
             DataFilterUtil.SetRepositoryDataFilter(this, null);
             DataFilter.Apply("", filter);
             AsTable(asTable);
@@ -56,7 +56,9 @@ namespace FreeSql
         }
         public DbContextOptions DbContextOptions { get => _db.Options; set => _db.Options = value; }
 
-        public IFreeSql Orm { get; private set; }
+        internal DbContextScopedFreeSql _ormScoped;
+        internal IFreeSql OrmOriginal => _ormScoped?._originalFsql;
+        public IFreeSql Orm => _ormScoped;
         IUnitOfWork _unitOfWork;
         public IUnitOfWork UnitOfWork
         {
@@ -64,16 +66,17 @@ namespace FreeSql
             {
                 _unitOfWork = value;
                 if (_dbsetPriv != null) _dbsetPriv._uow = _unitOfWork; //防止 dbset 对象已经存在，再次设置 UnitOfWork 无法生效，所以作此判断重新设置
+                if (_dbPriv != null) _dbPriv.UnitOfWork = _unitOfWork;
             }
             get => _unitOfWork;
         }
         public IUpdate<TEntity> UpdateDiy => _dbset.OrmUpdateInternal(null);
 
-        public ISelect<TEntity> Select => _dbset.OrmSelectInternal(null);
-        public ISelect<TEntity> Where(Expression<Func<TEntity, bool>> exp) => _dbset.OrmSelectInternal(null).Where(exp);
-        public ISelect<TEntity> WhereIf(bool condition, Expression<Func<TEntity, bool>> exp) => _dbset.OrmSelectInternal(null).WhereIf(condition, exp);
+        public virtual ISelect<TEntity> Select => _dbset.OrmSelectInternal(null);
+        public ISelect<TEntity> Where(Expression<Func<TEntity, bool>> exp) => Select.Where(exp);
+        public ISelect<TEntity> WhereIf(bool condition, Expression<Func<TEntity, bool>> exp) => Select.WhereIf(condition, exp);
 
-        public int Delete(Expression<Func<TEntity, bool>> predicate)
+        public virtual int Delete(Expression<Func<TEntity, bool>> predicate)
         {
             var delete = _dbset.OrmDeleteInternal(null).Where(predicate);
             var sql = delete.ToSql();
@@ -81,13 +84,12 @@ namespace FreeSql
             _db._entityChangeReport.Add(new DbContext.EntityChangeReport.ChangeInfo { Object = sql, Type = DbContext.EntityChangeType.SqlRaw });
             return affrows;
         }
-
-        public int Delete(TEntity entity)
+        public virtual int Delete(TEntity entity)
         {
             _dbset.Remove(entity);
             return _db.SaveChanges();
         }
-        public int Delete(IEnumerable<TEntity> entitys)
+        public virtual int Delete(IEnumerable<TEntity> entitys)
         {
             _dbset.RemoveRange(entitys);
             return _db.SaveChanges();
@@ -106,12 +108,12 @@ namespace FreeSql
             return entitys.ToList();
         }
 
-        public int Update(TEntity entity)
+        public virtual int Update(TEntity entity)
         {
             _dbset.Update(entity);
             return _db.SaveChanges();
         }
-        public int Update(IEnumerable<TEntity> entitys)
+        public virtual int Update(IEnumerable<TEntity> entitys)
         {
             _dbset.UpdateRange(entitys);
             return _db.SaveChanges();
@@ -126,7 +128,7 @@ namespace FreeSql
         }
         public void FlushState() => _dbset.FlushState();
 
-        public TEntity InsertOrUpdate(TEntity entity)
+        public virtual TEntity InsertOrUpdate(TEntity entity)
         {
             _dbset.AddOrUpdate(entity);
             _db.SaveChanges();
@@ -147,18 +149,18 @@ namespace FreeSql
 
         TEntity CheckTKeyAndReturnIdEntity(TKey id)
         {
-            var tb = _db.Orm.CodeFirst.GetTableByEntity(EntityType);
+            var tb = _db.OrmOriginal.CodeFirst.GetTableByEntity(EntityType);
             if (tb.Primarys.Length != 1) throw new Exception($"实体类型 {EntityType.Name} 主键数量不为 1，无法使用该方法");
             if (tb.Primarys[0].CsType.NullableTypeOrThis() != typeof(TKey).NullableTypeOrThis()) throw new Exception($"实体类型 {EntityType.Name} 主键类型不为 {typeof(TKey).FullName}，无法使用该方法");
             var obj = Activator.CreateInstance(tb.Type);
-            _db.Orm.SetEntityValueWithPropertyName(tb.Type, obj, tb.Primarys[0].CsName, id);
+            _db.OrmOriginal.SetEntityValueWithPropertyName(tb.Type, obj, tb.Primarys[0].CsName, id);
             var  ret = obj as TEntity;
             if (ret == null) throw new Exception($"实体类型 {EntityType.Name} 无法转换为 {typeof(TEntity).Name}，无法使用该方法");
             return ret;
         }
 
-        public int Delete(TKey id) => Delete(CheckTKeyAndReturnIdEntity(id));
-        public TEntity Find(TKey id) => _dbset.OrmSelectInternal(CheckTKeyAndReturnIdEntity(id)).ToOne();
+        public virtual int Delete(TKey id) => Delete(CheckTKeyAndReturnIdEntity(id));
+        public virtual TEntity Find(TKey id) => Select.WhereDynamic(CheckTKeyAndReturnIdEntity(id)).ToOne();
         public TEntity Get(TKey id) => Find(id);
     }
 }

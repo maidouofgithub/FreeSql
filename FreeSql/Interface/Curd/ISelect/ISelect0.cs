@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FreeSql.Internal.Model;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
@@ -15,7 +16,7 @@ namespace FreeSql
 #else
         Task<DataTable> ToDataTableAsync(string field = null);
         Task<Dictionary<TKey, T1>> ToDictionaryAsync<TKey>(Func<T1, TKey> keySelector);
-        Task<Dictionary<TKey, TValue>> ToDictionaryAsync<TKey, TValue>(Func<T1, TKey> keySelector, Func<T1, TValue> valueSelector);
+        Task<Dictionary<TKey, TElement>> ToDictionaryAsync<TKey, TElement>(Func<T1, TKey> keySelector, Func<T1, TElement> elementSelector);
         Task<List<T1>> ToListAsync(bool includeNestedMembers = false);
         Task<List<TTuple>> ToListAsync<TTuple>(string field);
 
@@ -60,7 +61,7 @@ namespace FreeSql
         /// <param name="keySelector"></param>
         /// <returns></returns>
         Dictionary<TKey, T1> ToDictionary<TKey>(Func<T1, TKey> keySelector);
-        Dictionary<TKey, TValue> ToDictionary<TKey, TValue>(Func<T1, TKey> keySelector, Func<T1, TValue> valueSelector);
+        Dictionary<TKey, TElement> ToDictionary<TKey, TElement>(Func<T1, TKey> keySelector, Func<T1, TElement> elementSelector);
         /// <summary>
         /// 执行SQL查询，返回 T1 实体所有字段的记录，记录不存在时返回 Count 为 0 的列表<para></para>
         /// 注意：<para></para>
@@ -262,6 +263,13 @@ namespace FreeSql
         TSelect WhereIf(bool condition, string sql, object parms = null);
 
         /// <summary>
+        /// 动态过滤条件
+        /// </summary>
+        /// <param name="filter"></param>
+        /// <returns></returns>
+        TSelect WhereDynamicFilter(DynamicFilterInfo filter);
+
+        /// <summary>
         /// 禁用全局过滤功能，不传参数时将禁用所有
         /// </summary>
         /// <param name="name">零个或多个过滤器名字</param>
@@ -276,7 +284,9 @@ namespace FreeSql
         /// PostgreSQL: for update nowait<para></para>
         /// Oracle: for update nowait<para></para>
         /// Sqlite: 无效果<para></para>
-        /// 达梦: for update nowait
+        /// 达梦: for update nowait<para></para>
+        /// 人大金仓: for update nowait<para></para>
+        /// 神通: for update
         /// </summary>
         /// <param name="nowait">noawait</param>
         /// <returns></returns>

@@ -47,9 +47,9 @@ namespace FreeSql.DataAnnotations
 
         public ColumnFluent Property(string proto)
         {
-            if (_properties.ContainsKey(proto) == false) throw new KeyNotFoundException($"找不到属性名 {proto}");
-            var col = _table._columns.GetOrAdd(proto, name => new ColumnAttribute { Name = proto });
-            return new ColumnFluent(col);
+            if (_properties.TryGetValue(proto, out var tryProto) == false) throw new KeyNotFoundException($"找不到属性名 {proto}");
+            var col = _table._columns.GetOrAdd(tryProto.Name, name => new ColumnAttribute { Name = proto });
+            return new ColumnFluent(col, tryProto, _entityType);
         }
 
         /// <summary>
@@ -78,6 +78,11 @@ namespace FreeSql.DataAnnotations
         {
             var idx = new IndexAttribute(name, fields, isUnique);
             _table._indexs.AddOrUpdate(name, idx, (_, __) => idx);
+            return this;
+        }
+        public TableFluent IndexRemove(string name)
+        {
+            _table._indexs.TryRemove(name, out var oldidx);
             return this;
         }
     }
@@ -131,7 +136,7 @@ namespace FreeSql.DataAnnotations
         {
             if (_properties.TryGetValue(proto, out var tryProto) == false) throw new KeyNotFoundException($"找不到属性名 {proto}");
             var col = _table._columns.GetOrAdd(tryProto.Name, name => new ColumnAttribute { Name = proto });
-            return new ColumnFluent(col);
+            return new ColumnFluent(col, tryProto, typeof(T));
         }
 
         /// <summary>

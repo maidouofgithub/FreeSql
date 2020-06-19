@@ -60,8 +60,8 @@ namespace FreeSql.Odbc.Dameng
             if (enumType != null)
             {
                 var newItem = enumType.GetCustomAttributes(typeof(FlagsAttribute), false).Any() ?
-                    CsToDb.New(OdbcType.Int, "number", $"number(16){(type.IsEnum ? " NOT NULL" : "")}", false, type.IsEnum ? false : true, Enum.GetValues(enumType).GetValue(0)) :
-                    CsToDb.New(OdbcType.BigInt, "number", $"number(32){(type.IsEnum ? " NOT NULL" : "")}", false, type.IsEnum ? false : true, Enum.GetValues(enumType).GetValue(0));
+                    CsToDb.New(OdbcType.Int, "number", $"number(16){(type.IsEnum ? " NOT NULL" : "")}", false, type.IsEnum ? false : true, enumType.CreateInstanceGetDefaultValue()) :
+                    CsToDb.New(OdbcType.BigInt, "number", $"number(32){(type.IsEnum ? " NOT NULL" : "")}", false, type.IsEnum ? false : true, enumType.CreateInstanceGetDefaultValue());
                 if (_dicCsToDb.ContainsKey(type.FullName) == false)
                 {
                     lock (_dicCsToDbLock)
@@ -114,7 +114,7 @@ namespace FreeSql.Odbc.Dameng
                 //codefirst 不支持表名中带 .
 
                 if (string.Compare(tbname[0], userId) != 0 && _orm.Ado.ExecuteScalar(CommandType.Text, _commonUtils.FormatSql(" select 1 from sys.dba_users where username={0}", tbname[0])) == null) //创建数据库
-                    throw new NotImplementedException($"Oracle CodeFirst 不支持代码创建 tablespace 与 schemas {tbname[0]}");
+                    throw new NotImplementedException($"达梦 CodeFirst 不支持代码创建 tablespace 与 schemas {tbname[0]}");
 
                 var sbalter = new StringBuilder();
                 var istmpatler = false; //创建临时表，导入数据，删除旧表，修改
@@ -139,7 +139,7 @@ namespace FreeSql.Odbc.Dameng
                         if (tb.Primarys.Any())
                         {
                             var pkname = primaryKeyName ?? $"{tbname[0]}_{tbname[1]}_pk1";
-                            sb.Append(" \r\n  CONSTRAINT ").Append(pkname).Append(" PRIMARY KEY (");
+                            sb.Append(" \r\n  CONSTRAINT ").Append(_commonUtils.QuoteSqlName(pkname)).Append(" PRIMARY KEY (");
                             foreach (var tbcol in tb.Primarys) sb.Append(_commonUtils.QuoteSqlName(tbcol.Attribute.Name)).Append(", ");
                             sb.Remove(sb.Length - 2, 2).Append("),");
                         }
@@ -200,7 +200,7 @@ where a.owner={{0}} and a.table_name={{1}}", tboldname ?? tbname);
                 var ds = _orm.Ado.ExecuteArray(CommandType.Text, sql);
                 var tbstruct = ds.ToDictionary(a => string.Concat(a[0]), a =>
                 {
-                    var sqlType = GetOracleSqlTypeFullName(a);
+                    var sqlType = GetDamengSqlTypeFullName(a);
                     return new
                     {
                         column = string.Concat(a[0]),
@@ -229,6 +229,7 @@ where a.owner={{0}} and a.table_name={{1}}", tboldname ?? tbname);
                                 if (istmpatler && Regex.IsMatch(tbcol.Attribute.DbType, @"\(\d+") == false && Regex.IsMatch(tbstructcol.sqlType, @"\(\d+")
                                     && string.Compare(tbcol.Attribute.DbType, Regex.Replace(tbstructcol.sqlType, @"\([^\)]+\)", ""), StringComparison.CurrentCultureIgnoreCase) == 0)
                                     istmpatler = false;
+                                if (istmpatler) break;
                             }
                             //sbalter.Append("execute immediate 'ALTER TABLE ").Append(_commonUtils.QuoteSqlName($"{tbname[0]}.{tbname[1]}")).Append(" MODIFY (").Append(_commonUtils.QuoteSqlName(tbstructcol.column)).Append(" ").Append(dbtypeNoneNotNull).Append(")';\r\n");
                             if (tbcol.Attribute.IsNullable != tbstructcol.is_nullable)
@@ -262,7 +263,9 @@ where a.owner={{0}} and a.table_name={{1}}", tboldname ?? tbname);
                         if (tbcol.Attribute.IsIdentity == true) seqcols.Add(NaviteTuple.Create(tbcol, tbname, tbcol.Attribute.IsIdentity == true));
                         if (string.IsNullOrEmpty(tbcol.Comment) == false) sbalter.Append("execute immediate 'COMMENT ON COLUMN ").Append(_commonUtils.QuoteSqlName($"{tbname[0]}.{tbname[1]}.{tbcol.Attribute.Name}")).Append(" IS ").Append(_commonUtils.FormatSql("{0}", tbcol.Comment ?? "").Replace("'", "''")).Append("';\r\n");
                     }
-
+                }
+                if (istmpatler == false)
+                {
                     var dsuksql = _commonUtils.FormatSql(@"
 select
 c.column_name,
@@ -307,8 +310,9 @@ and not exists(select 1 from all_constraints where index_name = a.index_name and
                     continue;
                 }
                 var oldpk = _orm.Ado.ExecuteScalar(CommandType.Text, _commonUtils.FormatSql(@" select constraint_name from user_constraints where owner={0} and table_name={1} and constraint_type='P'", tbname))?.ToString();
-                if (string.IsNullOrEmpty(oldpk) == false)
-                    sb.Append("execute immediate 'ALTER TABLE ").Append(_commonUtils.QuoteSqlName($"{tbname[0]}.{tbname[1]}")).Append(" DROP CONSTRAINT ").Append(oldpk).Append("';\r\n");
+                //if (string.IsNullOrEmpty(oldpk) == false)
+                //    sb.Append("execute immediate 'ALTER TABLE ").Append(_commonUtils.QuoteSqlName($"{tbname[0]}.{tbname[1]}")).Append(" DROP CONSTRAINT ").Append(_commonUtils.QuoteSqlName(oldpk)).Append("';\r\n");
+                //执行失败(语句1) 试图删除聚集主键
 
                 //创建临时表，数据导进临时表，然后删除原表，将临时表改名为原表名
                 var tablename = tboldname == null ? _commonUtils.QuoteSqlName($"{tbname[0]}.{tbname[1]}") : _commonUtils.QuoteSqlName($"{tboldname[0]}.{tboldname[1]}");
@@ -322,8 +326,9 @@ and not exists(select 1 from all_constraints where index_name = a.index_name and
                 }
                 if (tb.Primarys.Any())
                 {
-                    var pkname = primaryKeyName ?? $"{tbname[0]}_{tbname[1]}_pk2";
-                    sb.Append(" \r\n  CONSTRAINT ").Append(pkname).Append(" PRIMARY KEY (");
+                    var pkname = primaryKeyName ?? $"{tbname[0]}_{tbname[1]}_pk1";
+                    if (string.IsNullOrEmpty(oldpk) == false && oldpk == pkname) pkname = $"{pkname}1";
+                    sb.Append(" \r\n  CONSTRAINT ").Append(_commonUtils.QuoteSqlName(pkname)).Append(" PRIMARY KEY (");
                     foreach (var tbcol in tb.Primarys) sb.Append(_commonUtils.QuoteSqlName(tbcol.Attribute.Name)).Append(", ");
                     sb.Remove(sb.Length - 2, 2).Append("),");
                 }
@@ -384,12 +389,12 @@ and not exists(select 1 from all_constraints where index_name = a.index_name and
             {
                 if (dicDeclare.ContainsKey(seqname) == false)
                 {
-                    sbDeclare.Append("\r\n").Append(seqname).Append("IS NUMBER; \r\n");
+                    sbDeclare.Append("\r\nIS").Append(seqname).Append(" NUMBER; \r\n");
                     dicDeclare.Add(seqname, true);
                 }
-                sb.Append(seqname).Append("IS := 0; \r\n")
-                    .Append(" select count(1) into ").Append(seqname).Append(_commonUtils.FormatSql("IS from user_sequences where sequence_name={0}; \r\n", seqname))
-                    .Append("if ").Append(seqname).Append("IS > 0 then \r\n")
+                sb.Append("IS").Append(seqname).Append(" := 0; \r\n")
+                    .Append(" select count(1) into IS").Append(seqname).Append(_commonUtils.FormatSql(" from user_sequences where sequence_name={0}; \r\n", seqname))
+                    .Append("if IS").Append(seqname).Append(" > 0 then \r\n")
                     .Append("  execute immediate 'DROP SEQUENCE ").Append(_commonUtils.QuoteSqlName(seqname)).Append("';\r\n")
                     .Append("end if; \r\n");
             };
@@ -397,12 +402,12 @@ and not exists(select 1 from all_constraints where index_name = a.index_name and
             {
                 if (dicDeclare.ContainsKey(tiggerName) == false)
                 {
-                    sbDeclare.Append("\r\n").Append(tiggerName).Append("IS NUMBER; \r\n");
+                    sbDeclare.Append("\r\nIS").Append(tiggerName).Append(" NUMBER; \r\n");
                     dicDeclare.Add(tiggerName, true);
                 }
-                sb.Append(tiggerName).Append("IS := 0; \r\n")
-                    .Append(" select count(1) into ").Append(tiggerName).Append(_commonUtils.FormatSql("IS from user_triggers where trigger_name={0}; \r\n", tiggerName))
-                    .Append("if ").Append(tiggerName).Append("IS > 0 then \r\n")
+                sb.Append("IS").Append(tiggerName).Append(" := 0; \r\n")
+                    .Append(" select count(1) into IS").Append(tiggerName).Append(_commonUtils.FormatSql(" from user_triggers where trigger_name={0}; \r\n", tiggerName))
+                    .Append("if IS").Append(tiggerName).Append(" > 0 then \r\n")
                     .Append("  execute immediate 'DROP TRIGGER ").Append(_commonUtils.QuoteSqlName(tiggerName)).Append("';\r\n")
                     .Append("end if; \r\n");
             };
@@ -436,7 +441,7 @@ and not exists(select 1 from all_constraints where index_name = a.index_name and
             return sb.Length == 0 ? null : sb.Insert(0, "BEGIN \r\n").Insert(0, sbDeclare.ToString()).Append("END;").ToString();
         }
 
-        internal static string GetOracleSqlTypeFullName(object[] row)
+        internal static string GetDamengSqlTypeFullName(object[] row)
         {
             var a = row;
             var sqlType = string.Concat(a[1]).ToUpper();
